@@ -521,9 +521,13 @@ async function startServer() {
   const app = express();
   app.use(cookieParser());
 
-  // Redirect /dzen -> /dzen/ so relative assets resolve identically
-  app.get('/dzen', (_req, res) => {
-    res.redirect(301, '/dzen/');
+  // Redirect literal /dzen (without trailing slash) -> /dzen/
+  app.use((req, res, next) => {
+    if (req.method === 'GET' && req.originalUrl === '/dzen') {
+      res.redirect(301, '/dzen/');
+      return;
+    }
+    next();
   });
 
   // Serve generated article images under both /uploads/images and /dzen/uploads/images
@@ -548,8 +552,8 @@ async function startServer() {
     app.use(vite.middlewares);
   } else {
     const distDir = path.resolve(process.cwd(), 'dist');
-    app.use('/dzen', express.static(distDir));
-    app.use('/', express.static(distDir));
+    app.use('/dzen', express.static(distDir, { redirect: false }));
+    app.use('/', express.static(distDir, { redirect: false }));
 
     const sendSpa = (_req: express.Request, res: express.Response) => {
       const indexFile = path.join(distDir, 'index.html');
@@ -560,6 +564,7 @@ async function startServer() {
       }
     };
 
+    app.get('/dzen/', sendSpa);
     app.get('/dzen/*', sendSpa);
     app.get('*', sendSpa);
   }
