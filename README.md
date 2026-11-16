@@ -11,7 +11,7 @@
 
 ---
 
-## 1. Загрузка проекта в GitHub (`https://github.com/doktorpull/dzen.git`)
+## 1. Загрузка проекта в GitHub (`https://github.com/doktorpull/dzen2.git`)
 
 1. Скачайте архив проекта из Google AI Studio (или используйте встроенный экспорт в GitHub в панели AI Studio, если подключён аккаунт).
 2. Распакуйте проект локально и выполните в папке с проектом:
@@ -21,7 +21,7 @@ git init
 git add .
 git commit -m "Initial commit: Dzen AI Studio (Modules 1-4)"
 git branch -M main
-git remote add origin https://github.com/doktorpull/dzen.git
+git remote add origin https://github.com/doktorpull/dzen2.git
 git push -u origin main
 ```
 
@@ -40,8 +40,8 @@ git push -u origin main
 ```bash
 mkdir -p /opt/apps
 cd /opt/apps
-git clone https://github.com/doktorpull/dzen.git
-cd dzen
+git clone https://github.com/doktorpull/dzen2.git
+cd dzen2
 ```
 
 ### Шаг 2. Настройка переменных окружения `.env`
@@ -142,7 +142,7 @@ sudo nginx -t && sudo systemctl reload nginx
 Когда вы вносите изменения в GitHub-репозиторий, обновление на сервере занимает две команды (база `./data/dzen.db` и сгенерированные картинки сохраняются в томе `./data`):
 
 ```bash
-cd /opt/apps/dzen
+cd /opt/apps/dzen2
 git pull
 docker compose up -d --build
 ```
