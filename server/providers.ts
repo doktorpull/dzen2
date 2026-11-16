@@ -129,6 +129,107 @@ export interface TextGenerationResult {
   providerUsed: string;
 }
 
+interface ParsedProviderError {
+  status: number | null;
+  isQuotaOrRateLimit: boolean;
+  isTransient: boolean;
+  retryDelayMs: number | null;
+  rawMessage: string;
+}
+
+function parseProviderError(err: unknown): ParsedProviderError {
+  const raw = err instanceof Error ? err.message : String(err);
+  let status: number | null = null;
+  let message = raw;
+  let retryDelayMs: number | null = null;
+
+  const statusObj = (err as { status?: number })?.status;
+  if (typeof statusObj === 'number') {
+    status = statusObj;
+  }
+
+  try {
+    const start = raw.indexOf('{');
+    const end = raw.lastIndexOf('}');
+    if (start !== -1 && end > start) {
+      const parsed = JSON.parse(raw.slice(start, end + 1)) as {
+        error?: {
+          code?: number;
+          message?: string;
+          status?: string;
+          details?: Array<{ retryDelay?: string }>;
+        };
+      };
+      if (parsed?.error) {
+        if (typeof parsed.error.code === 'number') status = parsed.error.code;
+        if (parsed.error.message) message = parsed.error.message;
+        const delayDetail = parsed.error.details?.find((d) => typeof d.retryDelay === 'string');
+        if (delayDetail?.retryDelay) {
+          const sec = parseFloat(delayDetail.retryDelay.replace(/s$/i, ''));
+          if (Number.isFinite(sec) && sec > 0) {
+            retryDelayMs = Math.round(sec * 1000);
+          }
+        }
+      }
+    }
+  } catch {
+    // keep raw message
+  }
+
+  if (status === null) {
+    const m = raw.match(/\b(400|401|403|404|429|500|502|503|504)\b/);
+    if (m) status = Number(m[1]);
+  }
+
+  const lower = `${raw} ${message}`.toLowerCase();
+  const isQuotaOrRateLimit =
+    status === 429 || lower.includes('resource_exhausted') || lower.includes('quota') || lower.includes('rate limit');
+  const isTransient =
+    isQuotaOrRateLimit ||
+    status === 500 ||
+    status === 502 ||
+    status === 503 ||
+    status === 504 ||
+    lower.includes('unavailable') ||
+    lower.includes('timeout') ||
+    lower.includes('econnreset');
+
+  return {
+    status,
+    isQuotaOrRateLimit,
+    isTransient,
+    retryDelayMs,
+    rawMessage: message.trim(),
+  };
+}
+
+export function formatProviderError(provider: string, model: string, err: unknown): Error {
+  const parsed = parseProviderError(err);
+  if (parsed.isQuotaOrRateLimit) {
+    const isDailyOrBilling = parsed.rawMessage.toLowerCase().includes('exceeded your current quota');
+    const hint =
+      provider === 'gemini'
+        ? 'Проверьте лимиты/биллинг Gemini API, выберите лёгкую модель gemini-3.1-flash-lite или переключите провайдер текста в «Настройках» (OpenAI / DeepSeek / Кастомный OpenAI).'
+        : 'Подождите 30–60 секунд и повторите этап, либо проверьте баланс/лимиты выбранного провайдера в «Настройках».';
+    return new Error(
+      isDailyOrBilling
+        ? `Превышена квота API провайдера ${provider} (${model}, код 429 RESOURCE_EXHAUSTED). ${hint}`
+        : `Достигнут лимит запросов в минуту у провайдера ${provider} (${model}, код 429). ${hint}`,
+    );
+  }
+  if (parsed.status === 401 || parsed.status === 403 || parsed.rawMessage.toLowerCase().includes('api_key_invalid')) {
+    return new Error(
+      `Ошибка доступа к провайдеру ${provider} (${parsed.status || 403}): проверьте корректность API-ключа на сервере.`,
+    );
+  }
+  if (parsed.status === 404) {
+    return new Error(
+      `Модель или эндпоинт "${model}" не найден у провайдера ${provider} (404). Проверьте имя модели и Base URL в «Настройках».`,
+    );
+  }
+  return new Error(`Ошибка ${provider} (${model}): ${parsed.rawMessage.slice(0, 320)}`);
+}
+
 async function withRetry<T>(fn: () => Promise<T>, retries = 2): Promise<T> {
   let lastErr: unknown;
   for (let i = 0; i <= retries; i++) {
@@ -136,12 +237,60 @@ async function withRetry<T>(fn: () => Promise<T>, retries = 2): Promise<T> {
       return await fn();
     } catch (err) {
       lastErr = err;
-      if (i < retries) {
-        await new Promise((r) => setTimeout(r, 900 * (i + 1)));
+      const parsed = parseProviderError(err);
+      if (!parsed.isTransient || i >= retries) {
+        break;
       }
+      const waitMs =
+        parsed.retryDelayMs && parsed.retryDelayMs <= 12000
+          ? parsed.retryDelayMs + 400
+          : parsed.isQuotaOrRateLimit
+            ? 2500 * (i + 1)
+            : 1000 * (i + 1);
+      await new Promise((r) => setTimeout(r, waitMs));
     }
   }
   throw lastErr;
+}
+
+async function callGeminiModel(
+  ai: GoogleGenAI,
+  targetModel: string,
+  opts: TextGenerationOptions,
+): Promise<TextGenerationResult> {
+  const config: Record<string, unknown> = {
+    systemInstruction: opts.systemInstruction,
+  };
+
+  if (targetModel === 'gemini-4-hydrogen') {
+    config.thinkingConfig = { thinkingLevel: ThinkingLevel.MEDIUM };
+  }
+  if (opts.jsonMode && !opts.useSearchGrounding) {
+    config.responseMimeType = 'application/json';
+  }
+  if (opts.useSearchGrounding) {
+    config.tools = [{ googleSearch: {} }];
+  }
+
+  const response = await withRetry(() =>
+    ai.models.generateContent({
+      model: targetModel,
+      contents: opts.prompt,
+      config,
+    }),
+  );
+
+  const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks ?? [];
+  const groundingUrls = chunks
+    .map((c) => c.web)
+    .filter((w): w is { uri: string; title?: string } => Boolean(w?.uri))
+    .map((w) => ({ uri: w.uri, title: w.title || w.uri }));
+
+  return {
+    text: (response.text ?? '').trim(),
+    groundingUrls,
+    providerUsed: `gemini:${targetModel}`,
+  };
 }
 
 export async function generateText(
@@ -154,44 +303,24 @@ export async function generateText(
   if (provider === 'gemini') {
     const ai = getGeminiClient();
     if (!ai) {
-      throw new Error('GEMINI_API_KEY не настроен на сервере. Добавьте ключ в окружение или выберите другой провайдер в .env.');
+      throw new Error('GEMINI_API_KEY не настроен на сервере. Добавьте ключ в окружение или выберите другой провайдер в «Настройках».');
     }
     const validGeminiModels = ['gemini-4-hydrogen', 'gemini-4-argon', 'gemini-4-carbon', 'gemini-3.1-flash-lite'];
     const targetModel = validGeminiModels.includes(model) ? model : 'gemini-4-hydrogen';
 
-    const config: Record<string, unknown> = {
-      systemInstruction: opts.systemInstruction,
-    };
-
-    if (targetModel === 'gemini-4-hydrogen') {
-      config.thinkingConfig = { thinkingLevel: ThinkingLevel.MEDIUM };
+    try {
+      return await callGeminiModel(ai, targetModel, opts);
+    } catch (err) {
+      const parsed = parseProviderError(err);
+      if (parsed.isQuotaOrRateLimit && targetModel !== 'gemini-3.1-flash-lite') {
+        try {
+          return await callGeminiModel(ai, 'gemini-3.1-flash-lite', opts);
+        } catch (fallbackErr) {
+          throw formatProviderError('gemini', `${targetModel} / gemini-3.1-flash-lite`, fallbackErr);
+        }
+      }
+      throw formatProviderError('gemini', targetModel, err);
     }
-    if (opts.jsonMode && !opts.useSearchGrounding) {
-      config.responseMimeType = 'application/json';
-    }
-    if (opts.useSearchGrounding) {
-      config.tools = [{ googleSearch: {} }];
-    }
-
-    const response = await withRetry(() =>
-      ai.models.generateContent({
-        model: targetModel,
-        contents: opts.prompt,
-        config,
-      }),
-    );
-
-    const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks ?? [];
-    const groundingUrls = chunks
-      .map((c) => c.web)
-      .filter((w): w is { uri: string; title?: string } => Boolean(w?.uri))
-      .map((w) => ({ uri: w.uri, title: w.title || w.uri }));
-
-    return {
-      text: (response.text ?? '').trim(),
-      groundingUrls,
-      providerUsed: `gemini:${targetModel}`,
-    };
   }
 
   if (provider === 'openai' || provider === 'deepseek' || provider === 'custom_openai') {
@@ -200,31 +329,47 @@ export async function generateText(
     if (!apiKey) {
       throw new Error(`API-ключ для провайдера "${provider}" не задан в переменных окружения сервера.`);
     }
-    const baseUrl =
+    const baseUrl = (
       provider === 'custom_openai'
-        ? settings.custom_openai_base_url.replace(/\/$/, '')
+        ? settings.custom_openai_base_url
         : isDeepSeek
-          ? (process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com/v1').replace(/\/$/, '')
-          : (process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1').replace(/\/$/, '');
+          ? (process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com/v1')
+          : (process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1')
+    )
+      .trim()
+      .replace(/\/+$/, '');
 
     const targetModel =
       provider === 'custom_openai'
         ? settings.custom_openai_model
         : model || (isDeepSeek ? 'deepseek-chat' : 'gpt-4o');
 
-    const body: Record<string, unknown> = {
-      model: targetModel,
-      messages: [
-        { role: 'system', content: opts.systemInstruction },
-        { role: 'user', content: opts.prompt },
-      ],
-    };
-    if (opts.jsonMode) {
+    const isResponsesApi = baseUrl.endsWith('/responses');
+    const endpoint =
+      isResponsesApi || baseUrl.endsWith('/chat/completions')
+        ? baseUrl
+        : `${baseUrl}/chat/completions`;
+
+    const body: Record<string, unknown> = isResponsesApi
+      ? {
+          model: targetModel,
+          instructions: opts.systemInstruction,
+          input: opts.prompt,
+        }
+      : {
+          model: targetModel,
+          messages: [
+            { role: 'system', content: opts.systemInstruction },
+            { role: 'user', content: opts.prompt },
+          ],
+        };
+
+    if (opts.jsonMode && !isResponsesApi && provider !== 'custom_openai') {
       body.response_format = { type: 'json_object' };
     }
 
     const res = await withRetry(async () => {
-      const r = await fetch(`${baseUrl}/chat/completions`, {
+      const r = await fetch(endpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -236,11 +381,32 @@ export async function generateText(
         const errText = await r.text();
         throw new Error(`Ошибка ${provider} (${r.status}): ${errText.slice(0, 300)}`);
       }
-      return r.json() as Promise<{ choices?: Array<{ message?: { content?: string } }> }>;
+      return r.json() as Promise<{
+        output_text?: string;
+        output?: Array<{ content?: Array<{ text?: string }> }>;
+        choices?: Array<{ message?: { content?: string } }>;
+        text?: string;
+        response?: string;
+      }>;
     });
 
+    const outputFromBlocks = Array.isArray(res.output)
+      ? res.output
+          .flatMap((item) => (Array.isArray(item.content) ? item.content : []))
+          .map((part) => part.text || '')
+          .join('')
+      : '';
+
+    const extractedText =
+      res.choices?.[0]?.message?.content ||
+      res.output_text ||
+      outputFromBlocks ||
+      res.response ||
+      res.text ||
+      '';
+
     return {
-      text: (res.choices?.[0]?.message?.content || '').trim(),
+      text: extractedText.trim(),
       groundingUrls: [],
       providerUsed: `${provider}:${targetModel}`,
     };
@@ -322,6 +488,25 @@ export async function generateText(
   throw new Error(`Неизвестный провайдер текста: ${provider}`);
 }
 
+export async function testTextProvider(settings: AppSettings): Promise<{ ok: boolean; providerUsed?: string; sample?: string; error?: string }> {
+  try {
+    const res = await generateText(settings, {
+      systemInstruction: 'Ответь кратко одним-двумя словами на русском: Связь ОК.',
+      prompt: 'Проверка подключения к модели генерации.',
+    });
+    return {
+      ok: true,
+      providerUsed: res.providerUsed,
+      sample: res.text.slice(0, 120),
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
 export async function generateEmbedding(text: string): Promise<number[] | null> {
   const ai = getGeminiClient();
   if (!ai) return null;
@@ -357,15 +542,24 @@ export async function generateImageBytes(
         ? settings.image_model
         : 'gemini-3.1-flash-lite-image';
 
-    const response = await ai.models.generateContent({
-      model: targetModel,
-      contents: { parts: [{ text: prompt }] },
-      config: {
-        imageConfig: {
-          aspectRatio,
-        },
-      },
-    });
+    let response;
+    try {
+      response = await withRetry(
+        () =>
+          ai.models.generateContent({
+            model: targetModel,
+            contents: { parts: [{ text: prompt }] },
+            config: {
+              imageConfig: {
+                aspectRatio,
+              },
+            },
+          }),
+        1,
+      );
+    } catch (err) {
+      throw formatProviderError('gemini_image', targetModel, err);
+    }
 
     for (const part of response.candidates?.[0]?.content?.parts ?? []) {
       if (part.inlineData?.data) {

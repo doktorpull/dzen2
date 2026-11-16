@@ -96,7 +96,16 @@ async function evaluateAndSave(articleId: number, markdown: string, nicheId: num
   return { cleanedMd, cleanHtml, report, nextStatus };
 }
 
-export async function runArticlePipeline(articleId: number): Promise<void> {
+async function pauseIfGemini(provider: string) {
+  if (provider === 'gemini') {
+    await new Promise((r) => setTimeout(r, 900));
+  }
+}
+
+export async function runArticlePipeline(
+  articleId: number,
+  opts: { resume?: boolean } = {},
+): Promise<void> {
   const article = db.prepare('SELECT * FROM articles WHERE id = ?').get(articleId) as Article | undefined;
   if (!article) return;
 
@@ -112,28 +121,46 @@ export async function runArticlePipeline(articleId: number): Promise<void> {
     .prepare('SELECT * FROM rag_samples WHERE niche_id = ? ORDER BY id DESC LIMIT 5')
     .all(niche.id) as RagSample[];
 
-  const stages: PipelineStageState[] = INITIAL_STAGES.map((s) => ({ ...s }));
+  let stages: PipelineStageState[] = INITIAL_STAGES.map((s) => ({ ...s }));
+  if (opts.resume && article.stages_json) {
+    const prevStages = parseJsonSafe<PipelineStageState[]>(article.stages_json, []);
+    if (Array.isArray(prevStages) && prevStages.length === INITIAL_STAGES.length) {
+      stages = prevStages.map((s, idx) =>
+        s.status === 'done'
+          ? { ...INITIAL_STAGES[idx], ...s, status: 'done' }
+          : { ...INITIAL_STAGES[idx], status: 'pending' },
+      );
+    }
+  }
+
+  const firstPendingIdx = stages.findIndex((s) => s.status !== 'done');
+  const startStageNum = firstPendingIdx >= 0 ? stages[firstPendingIdx].stage : 1;
+
   db.prepare(`
     UPDATE articles
-    SET status = 'generating', current_stage = 1, stages_json = ?, error_message = '', provider_used = ?, updated_at = datetime('now')
+    SET status = 'generating', current_stage = ?, stages_json = ?, error_message = '', provider_used = ?, updated_at = datetime('now')
     WHERE id = ?
-  `).run(JSON.stringify(stages), `${settings.text_provider}:${settings.text_model}`, articleId);
+  `).run(startStageNum, JSON.stringify(stages), `${settings.text_provider}:${settings.text_model}`, articleId);
+
+  let usedProviderLabel = `${settings.text_provider}:${settings.text_model}`;
 
   try {
     // ------------------------------------------------------------------
     // ЭТАП 1: Стратег
     // ------------------------------------------------------------------
-    let t0 = Date.now();
-    updateStage(articleId, stages, 0, { status: 'running' });
+    let strategistBrief = parseJsonSafe<Record<string, string>>(article.strategist_brief_json || '{}', {});
+    if (!opts.resume || stages[0].status !== 'done' || !strategistBrief.angle) {
+      const t0 = Date.now();
+      updateStage(articleId, stages, 0, { status: 'running' });
 
-    const cpaContext = cpaOffer
-      ? `CPA-оффер для нативной интеграции: "${cpaOffer.title}" (ссылка: ${cpaOffer.affiliate_url}, анкор: "${cpaOffer.anchor_text}", тезис: ${cpaOffer.pitch_hint})`
-      : 'CPA-оффер не привязан — предусмотри место под полезный вывод или чек-лист без навязчивой рекламы.';
+      const cpaContext = cpaOffer
+        ? `CPA-оффер для нативной интеграции: "${cpaOffer.title}" (ссылка: ${cpaOffer.affiliate_url}, анкор: "${cpaOffer.anchor_text}", тезис: ${cpaOffer.pitch_hint})`
+        : 'CPA-оффер не привязан — предусмотри место под полезный вывод или чек-лист без навязчивой рекламы.';
 
-    const strategistRes = await generateText(settings, {
-      systemInstruction:
-        'Ты — Стратег контент-редакции Дзена. Определи острый угол подачи, целевую эмоцию, крючок для первых 3 абзацев (критическая зона алгоритма Дзен) и точку нативного входа CPA-оффера. Отвечай строго JSON-объектом.',
-      prompt: `Тема статьи: "${article.title}"
+      const strategistRes = await generateText(settings, {
+        systemInstruction:
+          'Ты — Стратег контент-редакции Дзена. Определи острый угол подачи, целевую эмоцию, крючок для первых 3 абзацев (критическая зона алгоритма Дзен) и точку нативного входа CPA-оффера. Отвечай строго JSON-объектом.',
+        prompt: `Тема статьи: "${article.title}"
 Ниша: "${niche.name}"
 Тон ниши: ${niche.default_tone}
 ${cpaContext}
@@ -145,33 +172,40 @@ ${cpaContext}
   "first_3_paragraphs_hook": "С чего начать первые 3 абзаца: конкретная сцена, цифра или конфликт",
   "cpa_integration_plan": "Где и как естественно встроить рекомендацию"
 }`,
-      jsonMode: true,
-    });
-    const strategistBrief = parseJsonSafe<Record<string, string>>(strategistRes.text, {
-      angle: article.title,
-      target_emotion: 'Узнавание и практический интерес',
-      first_3_paragraphs_hook: 'Личный случай с точной цифрой',
-      cpa_integration_plan: 'Ближе к третьей четверти статьи как рабочий инструмент',
-    });
-    db.prepare(`UPDATE articles SET strategist_brief_json = ? WHERE id = ?`).run(
-      JSON.stringify(strategistBrief),
-      articleId,
-    );
-    updateStage(articleId, stages, 0, {
-      status: 'done',
-      duration_ms: Date.now() - t0,
-      summary: strategistBrief.angle?.slice(0, 110),
-    });
+        jsonMode: true,
+      });
+      usedProviderLabel = strategistRes.providerUsed;
+      strategistBrief = parseJsonSafe<Record<string, string>>(strategistRes.text, {
+        angle: article.title,
+        target_emotion: 'Узнавание и практический интерес',
+        first_3_paragraphs_hook: 'Личный случай с точной цифрой',
+        cpa_integration_plan: 'Ближе к третьей четверти статьи как рабочий инструмент',
+      });
+      db.prepare(`UPDATE articles SET strategist_brief_json = ?, provider_used = ? WHERE id = ?`).run(
+        JSON.stringify(strategistBrief),
+        usedProviderLabel,
+        articleId,
+      );
+      updateStage(articleId, stages, 0, {
+        status: 'done',
+        duration_ms: Date.now() - t0,
+        summary: strategistBrief.angle?.slice(0, 110),
+      });
+      await pauseIfGemini(settings.text_provider);
+    }
 
     // ------------------------------------------------------------------
     // ЭТАП 2: SEO-оптимизатор
     // ------------------------------------------------------------------
-    t0 = Date.now();
-    updateStage(articleId, stages, 1, { status: 'running' });
-    const seoRes = await generateText(settings, {
-      systemInstruction:
-        'Ты — SEO-оптимизатор для Дзена. Собери семантическое ядро (ВЧ, СЧ, НЧ, LSI) и метаданные статьи. Заголовок должен быть сильным и честным — БЕЗ кликбейта и обмана ожиданий. Отвечай строго JSON.',
-      prompt: `Исходная тема: "${article.title}"
+    let seoCore = parseJsonSafe<Record<string, unknown>>(article.seo_core_json || '{}', {});
+    let finalTitle = article.title;
+    if (!opts.resume || stages[1].status !== 'done' || !seoCore.final_title) {
+      const t0 = Date.now();
+      updateStage(articleId, stages, 1, { status: 'running' });
+      const seoRes = await generateText(settings, {
+        systemInstruction:
+          'Ты — SEO-оптимизатор для Дзена. Собери семантическое ядро (ВЧ, СЧ, НЧ, LSI) и метаданные статьи. Заголовок должен быть сильным и честным — БЕЗ кликбейта и обмана ожиданий. Отвечай строго JSON.',
+        prompt: `Исходная тема: "${article.title}"
 Ниша: "${niche.name}"
 Бриф Стратега: ${JSON.stringify(strategistBrief)}
 
@@ -186,101 +220,126 @@ ${cpaContext}
   "mf_keywords": ["СЧ ключ 1", "СЧ ключ 2"],
   "lsi_words": ["LSI слово 1", "LSI слово 2", "LSI слово 3", "LSI слово 4"]
 }`,
-      jsonMode: true,
-    });
-    const seoCore = parseJsonSafe<Record<string, unknown>>(seoRes.text, {
-      final_title: article.title,
-      subtitle: '',
-      rubric: niche.name,
-      preview_description: strategistBrief.angle || article.title,
-      tags: [niche.name],
-    });
+        jsonMode: true,
+      });
+      usedProviderLabel = seoRes.providerUsed;
+      seoCore = parseJsonSafe<Record<string, unknown>>(seoRes.text, {
+        final_title: article.title,
+        subtitle: '',
+        rubric: niche.name,
+        preview_description: strategistBrief.angle || article.title,
+        tags: [niche.name],
+      });
 
-    const finalTitle = String(seoCore.final_title || article.title).slice(0, 120);
-    const subtitle = String(seoCore.subtitle || '');
-    const rubric = String(seoCore.rubric || niche.name);
-    const previewDesc = String(seoCore.preview_description || '');
-    const tags = Array.isArray(seoCore.tags) ? seoCore.tags.map(String) : [niche.name];
+      finalTitle = String(seoCore.final_title || article.title).slice(0, 120);
+      const subtitle = String(seoCore.subtitle || '');
+      const rubric = String(seoCore.rubric || niche.name);
+      const previewDesc = String(seoCore.preview_description || '');
+      const tags = Array.isArray(seoCore.tags) ? seoCore.tags.map(String) : [niche.name];
 
-    db.prepare(`
-      UPDATE articles
-      SET title = ?, subtitle = ?, rubric = ?, preview_description = ?, tags_json = ?, seo_core_json = ?
-      WHERE id = ?
-    `).run(finalTitle, subtitle, rubric, previewDesc, JSON.stringify(tags), JSON.stringify(seoCore), articleId);
-    updateStage(articleId, stages, 1, {
-      status: 'done',
-      duration_ms: Date.now() - t0,
-      summary: `${tags.length} тегов · рубрика «${rubric}»`,
-    });
+      db.prepare(`
+        UPDATE articles
+        SET title = ?, subtitle = ?, rubric = ?, preview_description = ?, tags_json = ?, seo_core_json = ?, provider_used = ?
+        WHERE id = ?
+      `).run(finalTitle, subtitle, rubric, previewDesc, JSON.stringify(tags), JSON.stringify(seoCore), usedProviderLabel, articleId);
+      updateStage(articleId, stages, 1, {
+        status: 'done',
+        duration_ms: Date.now() - t0,
+        summary: `${tags.length} тегов · рубрика «${rubric}»`,
+      });
+      await pauseIfGemini(settings.text_provider);
+    }
 
     // ------------------------------------------------------------------
     // ЭТАП 3: Архитектор
     // ------------------------------------------------------------------
-    t0 = Date.now();
-    updateStage(articleId, stages, 2, { status: 'running' });
+    let architectPlan = article.architect_plan || '';
     const targetChars = settings.target_char_count || 4500;
-    const architectRes = await generateText(settings, {
-      systemInstruction:
-        'Ты — Архитектор лонгридов для Дзена. Составь логическую структуру статьи под целевой объём ~4500 знаков. Первые 3 абзаца должны сразу вводить в конкретную ситуацию или конфликт без вводной «воды».',
-      prompt: `Заголовок: "${finalTitle}"
+    if (!opts.resume || stages[2].status !== 'done' || !architectPlan.trim()) {
+      const t0 = Date.now();
+      updateStage(articleId, stages, 2, { status: 'running' });
+      const architectRes = await generateText(settings, {
+        systemInstruction:
+          'Ты — Архитектор лонгридов для Дзена. Составь логическую структуру статьи под целевой объём ~4500 знаков. Первые 3 абзаца должны сразу вводить в конкретную ситуацию или конфликт без вводной «воды».',
+        prompt: `Заголовок: "${finalTitle}"
 Целевой объём: ~${targetChars} знаков (строго в коридоре 3500–5500 знаков).
 Бриф Стратега: ${JSON.stringify(strategistBrief)}
 SEO-ядро: ${JSON.stringify(seoCore)}
 
 Составь детальный план статьи по разделам (H2/H3) с указанием, какая цифра, пример или кейс будет в каждом блоке.`,
-    });
-    db.prepare(`UPDATE articles SET architect_plan = ? WHERE id = ?`).run(architectRes.text, articleId);
-    updateStage(articleId, stages, 2, {
-      status: 'done',
-      duration_ms: Date.now() - t0,
-      summary: 'План структуры сформирован',
-    });
+      });
+      usedProviderLabel = architectRes.providerUsed;
+      architectPlan = architectRes.text;
+      db.prepare(`UPDATE articles SET architect_plan = ?, provider_used = ? WHERE id = ?`).run(
+        architectPlan,
+        usedProviderLabel,
+        articleId,
+      );
+      updateStage(articleId, stages, 2, {
+        status: 'done',
+        duration_ms: Date.now() - t0,
+        summary: 'План структуры сформирован',
+      });
+      await pauseIfGemini(settings.text_provider);
+    }
 
     // ------------------------------------------------------------------
     // ЭТАП 4: Писатель
     // ------------------------------------------------------------------
-    t0 = Date.now();
-    updateStage(articleId, stages, 3, { status: 'running' });
-    const writerRes = await generateText(settings, {
-      systemInstruction: `Ты — автор-практик в Дзене. Пиши живым русским языком в Markdown (только ## и ### заголовки, абзацы, списки - ).
+    let draftText = article.draft_text || '';
+    if (!opts.resume || stages[3].status !== 'done' || !draftText.trim()) {
+      const t0 = Date.now();
+      updateStage(articleId, stages, 3, { status: 'running' });
+      const writerRes = await generateText(settings, {
+        systemInstruction: `Ты — автор-практик в Дзене. Пиши живым русским языком в Markdown (только ## и ### заголовки, абзацы, списки - ).
 ЗАПРЕЩЕНО использовать HTML-теги вроде <div>, <span>.
 Объём статьи должен быть от 3800 до 5000 знаков с пробелами.
 Обязательно: конкретные цифры, имена, жизненные примеры, личные местоимения (я/мы/на моём опыте).`,
-      prompt: `Заголовок: "${finalTitle}"
+        prompt: `Заголовок: "${finalTitle}"
 Ниша: "${niche.name}" (${niche.default_tone})
 План Архитектора:
-${architectRes.text}
+${architectPlan}
 
 ${cpaOffer ? `Встрой нативно в текст ссылку формата [${cpaOffer.anchor_text}](${cpaOffer.affiliate_url}) с контекстом: ${cpaOffer.pitch_hint}` : ''}
 
 Напиши полный черновик статьи (целевой объём ~${targetChars} знаков, не менее 3600 знаков). Не пиши заголовок H1 в начале текста — начинай сразу с первых 3 цепляющих абзацев.`,
-    });
-    db.prepare(`UPDATE articles SET draft_text = ? WHERE id = ?`).run(writerRes.text, articleId);
-    updateStage(articleId, stages, 3, {
-      status: 'done',
-      duration_ms: Date.now() - t0,
-      summary: `Черновик: ${writerRes.text.length} знаков`,
-    });
+      });
+      usedProviderLabel = writerRes.providerUsed;
+      draftText = writerRes.text;
+      db.prepare(`UPDATE articles SET draft_text = ?, provider_used = ? WHERE id = ?`).run(
+        draftText,
+        usedProviderLabel,
+        articleId,
+      );
+      updateStage(articleId, stages, 3, {
+        status: 'done',
+        duration_ms: Date.now() - t0,
+        summary: `Черновик: ${draftText.length} знаков`,
+      });
+      await pauseIfGemini(settings.text_provider);
+    }
 
     // ------------------------------------------------------------------
     // ЭТАП 5: Детектор маркеров + Стилист/Humanizer + Инжектор человечности
     // ------------------------------------------------------------------
-    t0 = Date.now();
-    updateStage(articleId, stages, 4, { status: 'running' });
-    const ragExamplesBlock =
-      ragSamples.length > 0
-        ? ragSamples
-            .map(
-              (s, idx) =>
-                `Образец ${idx + 1} («${s.title}» — только для анализа ритма и подачи, НЕ копируй факты и фразы):\n${s.content.slice(0, 900)}`,
-            )
-            .join('\n\n---\n\n')
-        : 'Эталонных образцов для ниши пока нет — опирайся на живой авторский разговорный стиль.';
+    let stylistText = article.stylist_text || '';
+    if (!opts.resume || stages[4].status !== 'done' || !stylistText.trim()) {
+      const t0 = Date.now();
+      updateStage(articleId, stages, 4, { status: 'running' });
+      const ragExamplesBlock =
+        ragSamples.length > 0
+          ? ragSamples
+              .map(
+                (s, idx) =>
+                  `Образец ${idx + 1} («${s.title}» — только для анализа ритма и подачи, НЕ копируй факты и фразы):\n${s.content.slice(0, 900)}`,
+              )
+              .join('\n\n---\n\n')
+          : 'Эталонных образцов для ниши пока нет — опирайся на живой авторский разговорный стиль.';
 
-    const detectedInDraft = BANNED_CLICHES.filter((c) => writerRes.text.toLowerCase().includes(c));
+      const detectedInDraft = BANNED_CLICHES.filter((c) => draftText.toLowerCase().includes(c));
 
-    const stylistRes = await generateText(settings, {
-      systemInstruction: `Ты — опытный редактор-стилист и «инжектор человечности» для Дзена.
+      const stylistRes = await generateText(settings, {
+        systemInstruction: `Ты — опытный редактор-стилист и «инжектор человечности» для Дзена.
 Твоя задача: переписать черновик так, чтобы он звучал как искренний, живой текст человека, сохранив все факты и ссылки.
 
 СТРОГИЙ ЗАПРЕТ (НИ ОДНОГО ВХОЖДЕНИЯ):
@@ -293,34 +352,42 @@ ${BANNED_CLICHES.join(', ')}.
 4. В каждом разделе должна быть конкретика: цифра, имя, бытовая сцена или пример. НЕ выдумывай несуществующие исследования.
 5. Максимум 1 длинное тире (—) на 1000 знаков — используй запятые, двоеточия и точки.
 6. Итоговый объём строго в коридоре 3700–5200 знаков. Сохрани Markdown-разметку и партнёрскую ссылку если она есть.`,
-      prompt: `Найденные в черновике штампы (удалить полностью): ${detectedInDraft.length ? detectedInDraft.join(', ') : 'нет'}
+        prompt: `Найденные в черновике штампы (удалить полностью): ${detectedInDraft.length ? detectedInDraft.join(', ') : 'нет'}
 
 Стилевые референсы (RAG — воспроизведи только ритм и интонацию, ноль копирования текста):
 ${ragExamplesBlock}
 
 Черновик для переработки:
-${writerRes.text}`,
-    });
-
-    db.prepare(`UPDATE articles SET stylist_text = ? WHERE id = ?`).run(stylistRes.text, articleId);
-    updateStage(articleId, stages, 4, {
-      status: 'done',
-      duration_ms: Date.now() - t0,
-      summary: `Очеловечено: ${stylistRes.text.length} знаков`,
-    });
+${draftText}`,
+      });
+      usedProviderLabel = stylistRes.providerUsed;
+      stylistText = stylistRes.text;
+      db.prepare(`UPDATE articles SET stylist_text = ?, provider_used = ? WHERE id = ?`).run(
+        stylistText,
+        usedProviderLabel,
+        articleId,
+      );
+      updateStage(articleId, stages, 4, {
+        status: 'done',
+        duration_ms: Date.now() - t0,
+        summary: `Очеловечено: ${stylistText.length} знаков`,
+      });
+      await pauseIfGemini(settings.text_provider);
+    }
 
     // ------------------------------------------------------------------
     // ЭТАП 6: Фактчекер
     // ------------------------------------------------------------------
-    t0 = Date.now();
-    updateStage(articleId, stages, 5, { status: 'running' });
-    const useSearchForFactcheck = settings.text_provider === 'gemini';
-    const factRes = await generateText(settings, {
-      systemInstruction:
-        'Ты — строгий фактчекер редакции. Проверь текст на сомнительные цифры, неподтверждённые законы/ставки, медицинские/финансовые риски и возможные галлюцинации. Отвечай JSON-массивом объектов-флагов для ручной проверки редактором (если всё чисто — верни пустой массив []).',
-      prompt: `Ниша: "${niche.name}"
+    if (!opts.resume || stages[5].status !== 'done') {
+      const t0 = Date.now();
+      updateStage(articleId, stages, 5, { status: 'running' });
+      const useSearchForFactcheck = settings.text_provider === 'gemini';
+      const factRes = await generateText(settings, {
+        systemInstruction:
+          'Ты — строгий фактчекер редакции. Проверь текст на сомнительные цифры, неподтверждённые законы/ставки, медицинские/финансовые риски и возможные галлюцинации. Отвечай JSON-массивом объектов-флагов для ручной проверки редактором (если всё чисто — верни пустой массив []).',
+        prompt: `Ниша: "${niche.name}"
 Проверь утверждения в тексте статьи:
-${stylistRes.text}
+${stylistText}
 
 Верни JSON-массив:
 [
@@ -331,38 +398,46 @@ ${stylistRes.text}
     "suggestion": "Как уточнить или переформулировать"
   }
 ]`,
-      jsonMode: !useSearchForFactcheck,
-      useSearchGrounding: useSearchForFactcheck,
-    });
-
-    const factFlags = parseJsonSafe<FactcheckFlag[]>(factRes.text, []);
-    db.prepare(`UPDATE articles SET factcheck_flags_json = ? WHERE id = ?`).run(
-      JSON.stringify(Array.isArray(factFlags) ? factFlags : []),
-      articleId,
-    );
-    updateStage(articleId, stages, 5, {
-      status: 'done',
-      duration_ms: Date.now() - t0,
-      summary: `Флагов проверки: ${Array.isArray(factFlags) ? factFlags.length : 0}`,
-    });
+        jsonMode: !useSearchForFactcheck,
+        useSearchGrounding: useSearchForFactcheck,
+      });
+      usedProviderLabel = factRes.providerUsed;
+      const factFlags = parseJsonSafe<FactcheckFlag[]>(factRes.text, []);
+      db.prepare(`UPDATE articles SET factcheck_flags_json = ?, provider_used = ? WHERE id = ?`).run(
+        JSON.stringify(Array.isArray(factFlags) ? factFlags : []),
+        usedProviderLabel,
+        articleId,
+      );
+      updateStage(articleId, stages, 5, {
+        status: 'done',
+        duration_ms: Date.now() - t0,
+        summary: `Флагов проверки: ${Array.isArray(factFlags) ? factFlags.length : 0}`,
+      });
+      await pauseIfGemini(settings.text_provider);
+    }
 
     // ------------------------------------------------------------------
     // ЭТАП 7: Редактор + Модуль 3 (Визуал) + 10-пт Валидатор
     // ------------------------------------------------------------------
-    t0 = Date.now();
+    const t0 = Date.now();
     updateStage(articleId, stages, 6, { status: 'running' });
 
     const editorRes = await generateText(settings, {
       systemInstruction: `Ты — выпускающий редактор Дзена. Сделай финальную вычитку текста: проверь первые 3 абзаца на силу вовлечения, убедись в отсутствии штампов (${BANNED_CLICHES.slice(0, 15).join(', ')}), сохрани партнёрскую ссылку, держи объём 3800–5200 знаков и верни чистый Markdown статьи без комментариев от себя.`,
-      prompt: `Отредактируй финальный текст статьи "${finalTitle}":\n\n${stylistRes.text}`,
+      prompt: `Отредактируй финальный текст статьи "${finalTitle}":\n\n${stylistText}`,
     });
+    usedProviderLabel = editorRes.providerUsed;
 
     const [{ images, warnings }, evalResult] = await Promise.all([
       generateArticleVisuals(articleId, finalTitle, niche.name, editorRes.text),
       evaluateAndSave(articleId, editorRes.text, niche.id),
     ]);
 
-    db.prepare(`UPDATE articles SET images_json = ? WHERE id = ?`).run(JSON.stringify(images), articleId);
+    db.prepare(`UPDATE articles SET images_json = ?, provider_used = ? WHERE id = ?`).run(
+      JSON.stringify(images),
+      usedProviderLabel,
+      articleId,
+    );
 
     if (article.topic_id) {
       db.prepare(`UPDATE topics SET status = 'completed' WHERE id = ?`).run(article.topic_id);
@@ -392,11 +467,16 @@ ${stylistRes.text}
       WHERE id = ?
     `).run(JSON.stringify(stages), message, articleId);
 
+    const failedArticle = db
+      .prepare(`SELECT a.*, n.name as niche_name FROM articles a JOIN niches n ON n.id = a.niche_id WHERE a.id = ?`)
+      .get(articleId) as Article | undefined;
+
     pipelineEmitter.emit(`article:${articleId}`, {
       type: 'error',
       articleId,
       error: message,
       stages,
+      article: failedArticle,
     });
   }
 }

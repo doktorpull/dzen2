@@ -5,7 +5,9 @@ import {
   Link2,
   LogOut,
   Menu,
+  Moon,
   Settings,
+  Sun,
   X,
 } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
@@ -19,6 +21,7 @@ import { TopicsRadarView } from './components/TopicsRadarView';
 import type { AppSettings, Article, CpaOffer, Niche, ProviderStatus, RagSample, Topic } from './types';
 
 type ActiveSection = 'topics' | 'pipeline' | 'rag' | 'cpa' | 'settings';
+type ThemeMode = 'dark' | 'light';
 
 const SECTION_META: Record<ActiveSection, { title: string; subtitle: string }> = {
   topics: { title: 'Радар тем и ниши', subtitle: 'Модуль 1 · Быстрый запуск и скоринг трендов' },
@@ -28,7 +31,16 @@ const SECTION_META: Record<ActiveSection, { title: string; subtitle: string }> =
   settings: { title: 'Настройки и Docker', subtitle: 'Провайдеры ИИ, Telegram-мост и деплой на порт 8003' },
 };
 
+function getInitialTheme(): ThemeMode {
+  try {
+    return window.localStorage.getItem('dzen_theme') === 'light' ? 'light' : 'dark';
+  } catch {
+    return 'dark';
+  }
+}
+
 export default function App() {
+  const [theme, setTheme] = useState<ThemeMode>(getInitialTheme);
   const [authChecked, setAuthChecked] = useState(false);
   const [authenticated, setAuthenticated] = useState(false);
   const [username, setUsername] = useState<string | null>(null);
@@ -47,6 +59,15 @@ export default function App() {
   const [selectedArticleId, setSelectedArticleId] = useState<number | null>(null);
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [providers, setProviders] = useState<ProviderStatus[]>([]);
+
+  useEffect(() => {
+    document.documentElement.classList.toggle('dark', theme === 'dark');
+    try {
+      window.localStorage.setItem('dzen_theme', theme);
+    } catch {
+      // ignore
+    }
+  }, [theme]);
 
   const loadAllData = useCallback(async () => {
     setLoadingData(true);
@@ -119,7 +140,7 @@ export default function App() {
 
   if (!authChecked) {
     return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center text-sm text-slate-500">
+      <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex items-center justify-center text-sm text-slate-500 dark:text-slate-400">
         Проверка сессии...
       </div>
     );
@@ -148,22 +169,22 @@ export default function App() {
   const meta = SECTION_META[section];
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 flex">
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex">
       {/* Боковая панель (256px на десктопе) */}
       <aside
-        className={`fixed inset-y-0 left-0 z-30 w-64 bg-white border-r border-slate-200 flex flex-col justify-between transition-transform duration-150 lg:static lg:translate-x-0 ${
+        className={`fixed inset-y-0 left-0 z-30 w-64 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col justify-between transition-transform duration-150 lg:static lg:translate-x-0 ${
           mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
         <div>
-          <div className="h-16 px-5 border-b border-slate-200 flex items-center justify-between">
-            <span className="font-display text-base font-bold tracking-tight text-slate-900 whitespace-nowrap">
+          <div className="h-16 px-5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
+            <span className="font-display text-base font-bold tracking-tight text-slate-900 dark:text-slate-100 whitespace-nowrap">
               Dzen AI Studio
             </span>
             <button
               type="button"
               onClick={() => setMobileMenuOpen(false)}
-              className="lg:hidden p-1.5 text-slate-500 hover:text-slate-900"
+              className="lg:hidden p-1.5 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100"
             >
               <X className="w-5 h-5" />
             </button>
@@ -183,8 +204,8 @@ export default function App() {
                   }}
                   className={`w-full px-3.5 py-2.5 text-sm font-medium rounded-lg transition-colors flex items-center justify-between gap-2 whitespace-nowrap ${
                     isActive
-                      ? 'bg-slate-900 text-white'
-                      : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'
+                      ? 'bg-slate-900 dark:bg-blue-600 text-white'
+                      : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-slate-100'
                   }`}
                 >
                   <span className="flex items-center gap-2.5">
@@ -194,7 +215,7 @@ export default function App() {
                   {item.count !== undefined && (
                     <span
                       className={`text-xs font-mono tabular-nums ${
-                        isActive ? 'text-slate-300' : 'text-slate-400'
+                        isActive ? 'text-slate-300 dark:text-blue-100' : 'text-slate-400 dark:text-slate-500'
                       }`}
                     >
                       {item.count}
@@ -206,23 +227,35 @@ export default function App() {
           </nav>
         </div>
 
-        <div className="p-4 border-t border-slate-200 space-y-3">
+        <div className="p-4 border-t border-slate-200 dark:border-slate-800 space-y-3">
           {settings && (
-            <div className="text-xs text-slate-500 space-y-1">
+            <div className="text-xs text-slate-500 dark:text-slate-400 space-y-1">
               <div className="truncate">
-                Текст: <span className="font-mono text-slate-800">{settings.text_provider}</span>
+                Текст: <span className="font-mono text-slate-800 dark:text-slate-200">{settings.text_provider}</span>
               </div>
               <div className="truncate">
-                Визуал: <span className="font-mono text-slate-800">{settings.image_provider}</span>
+                Визуал: <span className="font-mono text-slate-800 dark:text-slate-200">{settings.image_provider}</span>
               </div>
             </div>
           )}
-          <div className="flex items-center justify-between pt-2 border-t border-slate-100">
-            <span className="text-xs font-medium text-slate-700 truncate">{username || 'admin'}</span>
+
+          <div className="flex items-center justify-between pt-2 border-t border-slate-100 dark:border-slate-800">
+            <button
+              type="button"
+              onClick={() => setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'))}
+              className="text-xs text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white inline-flex items-center gap-1.5 whitespace-nowrap"
+            >
+              {theme === 'dark' ? <Sun className="w-3.5 h-3.5" /> : <Moon className="w-3.5 h-3.5" />}
+              {theme === 'dark' ? 'Светлая тема' : 'Тёмная тема'}
+            </button>
+          </div>
+
+          <div className="flex items-center justify-between pt-2 border-t border-slate-100 dark:border-slate-800">
+            <span className="text-xs font-medium text-slate-700 dark:text-slate-300 truncate">{username || 'admin'}</span>
             <button
               type="button"
               onClick={handleLogout}
-              className="text-xs text-slate-500 hover:text-red-700 inline-flex items-center gap-1 whitespace-nowrap"
+              className="text-xs text-slate-500 dark:text-slate-400 hover:text-red-700 dark:hover:text-red-400 inline-flex items-center gap-1 whitespace-nowrap"
             >
               <LogOut className="w-3.5 h-3.5" />
               Выйти
@@ -233,18 +266,18 @@ export default function App() {
 
       {/* Основной контент */}
       <div className="flex-1 min-w-0 flex flex-col">
-        <header className="h-16 px-6 bg-white border-b border-slate-200 flex items-center justify-between gap-8">
+        <header className="h-16 px-6 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-8">
           <div className="flex items-center gap-3 min-w-0">
             <button
               type="button"
               onClick={() => setMobileMenuOpen(true)}
-              className="lg:hidden p-2 -ml-2 text-slate-600 hover:text-slate-900"
+              className="lg:hidden p-2 -ml-2 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white"
             >
               <Menu className="w-5 h-5" />
             </button>
             <div className="min-w-0">
-              <div className="text-sm font-semibold text-slate-900 truncate">{meta.title}</div>
-              <div className="text-xs text-slate-500 truncate">{meta.subtitle}</div>
+              <div className="text-sm font-semibold text-slate-900 dark:text-slate-100 truncate">{meta.title}</div>
+              <div className="text-xs text-slate-500 dark:text-slate-400 truncate">{meta.subtitle}</div>
             </div>
           </div>
 
@@ -252,7 +285,7 @@ export default function App() {
             <button
               type="button"
               onClick={() => setSection('topics')}
-              className="px-4 py-2 text-xs font-medium bg-blue-700 hover:bg-blue-800 text-white rounded-lg transition-colors whitespace-nowrap shrink-0"
+              className="px-4 py-2 text-xs font-medium bg-blue-700 hover:bg-blue-800 dark:bg-blue-600 dark:hover:bg-blue-500 text-white rounded-lg transition-colors whitespace-nowrap shrink-0"
             >
               Новая статья
             </button>
@@ -261,12 +294,12 @@ export default function App() {
 
         <main className="flex-1 p-6 max-w-[1440px] w-full mx-auto">
           {loadError && (
-            <div className="mb-5 p-4 text-sm text-red-700 bg-red-50 border border-red-200 rounded-xl flex items-center justify-between gap-4">
+            <div className="mb-5 p-4 text-sm text-red-700 dark:text-red-400 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900 rounded-xl flex items-center justify-between gap-4">
               <span>{loadError}</span>
               <button
                 type="button"
                 onClick={() => void loadAllData()}
-                className="px-3 py-1.5 text-xs font-medium bg-white border border-red-200 rounded-lg hover:bg-red-100 whitespace-nowrap"
+                className="px-3 py-1.5 text-xs font-medium bg-white dark:bg-slate-900 border border-red-200 dark:border-red-800 rounded-lg hover:bg-red-100 dark:hover:bg-red-950 whitespace-nowrap"
               >
                 Повторить
               </button>
@@ -274,7 +307,7 @@ export default function App() {
           )}
 
           {loadingData && niches.length === 0 ? (
-            <div className="bg-white border border-slate-200 rounded-xl p-10 text-center text-sm text-slate-500">
+            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-10 text-center text-sm text-slate-500 dark:text-slate-400">
               Загрузка рабочего пространства...
             </div>
           ) : (

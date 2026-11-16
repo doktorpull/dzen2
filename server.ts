@@ -20,7 +20,7 @@ import {
   publishArticleViaTelegram,
 } from './server/export.ts';
 import { pipelineEmitter, rerunArticleStage, runArticlePipeline } from './server/pipeline.ts';
-import { generateEmbedding, getProviderStatuses } from './server/providers.ts';
+import { generateEmbedding, getProviderStatuses, testTextProvider } from './server/providers.ts';
 import { discoverAndScoreTopics } from './server/trends.ts';
 import type { Article, Niche, RagSample } from './server/types.ts';
 import { computeTextFingerprint, markdownToCleanHtml, runFinalValidator } from './server/validator.ts';
@@ -373,6 +373,26 @@ function buildApiRouter(): express.Router {
     });
   });
 
+  api.post('/articles/:id/retry', (req, res) => {
+    const id = Number(req.params.id);
+    const article = db.prepare('SELECT * FROM articles WHERE id = ?').get(id) as Article | undefined;
+    if (!article) {
+      res.status(404).json({ error: 'Статья не найдена.' });
+      return;
+    }
+    if (article.status === 'generating') {
+      res.status(409).json({ error: 'Конвейер уже выполняется для этой статьи.' });
+      return;
+    }
+    const { mode } = (req.body || {}) as { mode?: 'resume' | 'restart' };
+    const resume = mode !== 'restart';
+    void runArticlePipeline(id, { resume });
+    const updated = db
+      .prepare(`SELECT a.*, n.name as niche_name FROM articles a JOIN niches n ON n.id = a.niche_id WHERE a.id = ?`)
+      .get(id);
+    res.status(202).json(updated);
+  });
+
   api.post('/articles/:id/rerun', async (req, res) => {
     try {
       const id = Number(req.params.id);
@@ -512,6 +532,14 @@ function buildApiRouter(): express.Router {
       settings: next,
       providers: getProviderStatuses(),
     });
+  });
+
+  api.post('/settings/test-provider', async (req, res) => {
+    const current = getSettings();
+    const override = (req.body || {}) as Partial<typeof current>;
+    const candidate = { ...current, ...override };
+    const result = await testTextProvider(candidate);
+    res.status(result.ok ? 200 : 400).json(result);
   });
 
   return api;
