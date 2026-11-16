@@ -1,0 +1,15 @@
+services:
+  dzen-ai-studio:
+    build: .
+    container_name: dzen-ai-studio
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8003:8003"
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=production
+      - PORT=8003
+      - DATA_DIR=/app/data
+    volumes:
+      - ./data:/app/data

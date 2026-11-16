@@ -1,0 +1,8 @@
+{
+  "name": "Dzen AI Studio",
+  "description": "AI-комплекс для заработка на Дзене: подбор и скоринг тем, 7-этапный пайплайн генерации и очеловечивания статей, визуал и безопасная выдача с вёрсткой.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
