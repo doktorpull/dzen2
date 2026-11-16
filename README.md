@@ -38,8 +38,8 @@ git push -u origin main
 ### Шаг 1. Клонирование репозитория на VPS
 
 ```bash
-mkdir -p /opt/apps
-cd /opt/apps
+mkdir -p /opt/projects
+cd /opt/projects
 git clone https://github.com/doktorpull/dzen2.git
 cd dzen2
 ```
@@ -142,7 +142,7 @@ sudo nginx -t && sudo systemctl reload nginx
 Когда вы вносите изменения в GitHub-репозиторий, обновление на сервере занимает две команды (база `./data/dzen.db` и сгенерированные картинки сохраняются в томе `./data`):
 
 ```bash
-cd /opt/apps/dzen2
+cd /opt/projects/dzen2
 git pull
 docker compose up -d --build
 ```
