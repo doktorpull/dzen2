@@ -113,6 +113,12 @@ db.exec(`
   );
 `);
 
+try {
+  db.exec(`ALTER TABLE articles ADD COLUMN tokens_used INTEGER NOT NULL DEFAULT 0`);
+} catch {
+  // column already exists
+}
+
 const TOP10_NICHES: Array<Omit<Niche, 'id' | 'created_at'>> = [
   {
     name: 'Психология и саморазвитие',
@@ -272,10 +278,15 @@ function seedDatabase() {
   const defaultSettings: AppSettings = {
     text_provider: 'gemini',
     text_model: 'gemini-4-hydrogen',
+    fast_model: '',
+    pipeline_mode: 'balanced',
+    auto_fallback_enabled: true,
+    fallback_providers: [],
     image_provider: 'gemini',
     image_model: 'gemini-3.1-flash-lite-image',
     custom_openai_base_url: process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1',
     custom_openai_model: 'gpt-4o-mini',
+    ollama_base_url: process.env.OLLAMA_BASE_URL || 'http://127.0.0.1:11434/v1',
     topic_auto_approve_threshold: 78,
     target_char_count: 4500,
     telegram_enabled: false,
@@ -300,13 +311,24 @@ export function getSettings(): AppSettings {
       map[row.key] = row.value;
     }
   }
+  const rawMode = map.pipeline_mode;
+  const pipelineMode: AppSettings['pipeline_mode'] =
+    rawMode === 'economy' || rawMode === 'balanced' || rawMode === 'full' ? rawMode : 'balanced';
+
   return {
     text_provider: (map.text_provider as AppSettings['text_provider']) || 'gemini',
     text_model: (map.text_model as string) || 'gemini-4-hydrogen',
+    fast_model: (map.fast_model as string) || '',
+    pipeline_mode: pipelineMode,
+    auto_fallback_enabled: map.auto_fallback_enabled === undefined ? true : Boolean(map.auto_fallback_enabled),
+    fallback_providers: Array.isArray(map.fallback_providers)
+      ? (map.fallback_providers as AppSettings['fallback_providers'])
+      : [],
     image_provider: (map.image_provider as AppSettings['image_provider']) || 'gemini',
     image_model: (map.image_model as string) || 'gemini-3.1-flash-lite-image',
     custom_openai_base_url: (map.custom_openai_base_url as string) || 'https://api.openai.com/v1',
     custom_openai_model: (map.custom_openai_model as string) || 'gpt-4o-mini',
+    ollama_base_url: (map.ollama_base_url as string) || process.env.OLLAMA_BASE_URL || 'http://127.0.0.1:11434/v1',
     topic_auto_approve_threshold: Number(map.topic_auto_approve_threshold ?? 78),
     target_char_count: Number(map.target_char_count ?? 4500),
     telegram_enabled: Boolean(map.telegram_enabled ?? false),

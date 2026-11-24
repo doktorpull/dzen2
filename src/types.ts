@@ -1,12 +1,20 @@
 export type TextProviderId =
   | 'gemini'
+  | 'zai'
+  | 'ollama'
   | 'openai'
   | 'deepseek'
+  | 'openrouter'
+  | 'groq'
+  | 'qwen'
+  | 'mistral'
+  | 'xai'
+  | 'together'
   | 'anthropic'
   | 'yandex'
   | 'custom_openai';
 
-export type ImageProviderId = 'gemini' | 'openai' | 'kandinsky' | 'disabled';
+export type ImageProviderId = 'gemini' | 'zai' | 'openai' | 'kandinsky' | 'disabled';
 
 export interface Niche {
   id: number;
@@ -111,6 +119,13 @@ export interface PipelineStageState {
   error?: string;
 }
 
+export type PipelineMode = 'economy' | 'balanced' | 'full';
+
+export interface FallbackProviderTarget {
+  provider: TextProviderId;
+  model: string;
+}
+
 export interface Article {
   id: number;
   topic_id: number | null;
@@ -123,6 +138,7 @@ export interface Article {
   tags_json: string;
   preview_description: string;
   provider_used: string;
+  tokens_used: number;
   status: 'queued' | 'generating' | 'needs_review' | 'ready' | 'published_tg' | 'failed';
   current_stage: number;
   stages_json: string;
@@ -146,10 +162,15 @@ export interface Article {
 export interface AppSettings {
   text_provider: TextProviderId;
   text_model: string;
+  fast_model: string;
+  pipeline_mode: PipelineMode;
+  auto_fallback_enabled: boolean;
+  fallback_providers: FallbackProviderTarget[];
   image_provider: ImageProviderId;
   image_model: string;
   custom_openai_base_url: string;
   custom_openai_model: string;
+  ollama_base_url: string;
   topic_auto_approve_threshold: number;
   target_char_count: number;
   telegram_enabled: boolean;

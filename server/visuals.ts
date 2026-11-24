@@ -17,43 +17,54 @@ export async function generateArticleVisuals(
   title: string,
   nicheName: string,
   articleMarkdown: string,
-): Promise<{ images: ArticleImage[]; warnings: string[] }> {
+  opts: { skipLlmPrompting?: boolean } = {},
+): Promise<{ images: ArticleImage[]; warnings: string[]; tokensUsed: number }> {
   const settings = getSettings();
   const warnings: string[] = [];
+  let tokensUsed = 0;
 
   if (settings.image_provider === 'disabled') {
     return {
       images: [],
       warnings: ['Генерация изображений отключена в настройках.'],
+      tokensUsed: 0,
     };
   }
 
-  // Ask text LLM to design 1 cover + 2 inline documentary editorial prompts ("не сток")
+  const openingLine = articleMarkdown
+    .replace(/^#{1,6}\s+.*$/gm, '')
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+    .replace(/[*_`>#]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 140);
+
   let planned: PlannedVisual[] = [
     {
       role: 'cover',
       aspectRatio: '16:9',
-      prompt: `Documentary editorial photograph representing "${title}" in niche "${nicheName}", natural window lighting, candid real-life atmosphere, 35mm lens film grain, unposed authentic composition, no text, no watermarks`,
+      prompt: `Documentary editorial photograph representing "${title}" in niche "${nicheName}"${openingLine ? `, context: "${openingLine}"` : ''}, natural window lighting, candid real-life atmosphere, 35mm lens film grain, unposed authentic composition, no text, no watermarks`,
       caption: `Иллюстрация к теме: ${title}`,
       authenticity_note: 'Документальная съёмка 35mm, без студийного глянца и стоковых поз',
     },
     {
       role: 'inline_1',
       aspectRatio: '4:3',
-      prompt: `Everyday real-life detail photograph supporting an article about "${title}", lived-in environment, natural daylight, shallow depth of field, authentic documentary style, no text`,
+      prompt: `Everyday real-life detail photograph supporting an article about "${title}" (${nicheName}), lived-in environment, natural daylight, shallow depth of field, authentic documentary style, no text`,
       caption: 'Детали из повседневной практики',
       authenticity_note: 'Реалистичная живая сцена без 3D-пластика',
     },
   ];
 
-  try {
-    const promptRes = await generateText(settings, {
-      systemInstruction:
-        'Ты — арт-директор редакции Дзена. Создай промпты для генерации обложки (16:9) и 1–2 внутренних фото (4:3) в стиле документальной редакционной фотографии ("не сток"). Запрещены пластиковые 3D-лица, неон, стоковые улыбки в костюмах и текст на картинке. Верни строго JSON-массив из 2–3 объектов.',
-      prompt: `Заголовок статьи: "${title}"
+  if (!opts.skipLlmPrompting) {
+    try {
+      const promptRes = await generateText(settings, {
+        systemInstruction:
+          'Ты — арт-директор редакции Дзена. Создай промпты для генерации обложки (16:9) и 1–2 внутренних фото (4:3) в стиле документальной редакционной фотографии ("не сток"). Запрещены пластиковые 3D-лица, неон, стоковые улыбки в костюмах и текст на картинке. Верни строго JSON-массив из 2–3 объектов.',
+        prompt: `Заголовок статьи: "${title}"
 Ниша: "${nicheName}"
 Фрагмент текста:
-${articleMarkdown.slice(0, 1800)}
+${articleMarkdown.slice(0, 1200)}
 
 Верни JSON массив:
 [
@@ -72,26 +83,29 @@ ${articleMarkdown.slice(0, 1800)}
     "authenticity_note": "..."
   }
 ]`,
-      jsonMode: true,
-    });
+        jsonMode: true,
+        useFastModel: true,
+      });
+      tokensUsed += promptRes.tokensUsed || 0;
 
-    const cleaned = promptRes.text.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
-    const start = cleaned.indexOf('[');
-    const end = cleaned.lastIndexOf(']');
-    if (start !== -1 && end > start) {
-      const arr = JSON.parse(cleaned.slice(start, end + 1)) as Array<Record<string, unknown>>;
-      if (Array.isArray(arr) && arr.length >= 2) {
-        planned = arr.slice(0, 3).map((item, idx) => ({
-          role: idx === 0 ? 'cover' : idx === 1 ? 'inline_1' : 'inline_2',
-          aspectRatio: idx === 0 ? '16:9' : '4:3',
-          prompt: String(item.prompt || planned[0].prompt),
-          caption: String(item.caption || 'Иллюстрация к материалу'),
-          authenticity_note: String(item.authenticity_note || 'Естественный свет, без стоковых клише'),
-        }));
+      const cleaned = promptRes.text.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
+      const start = cleaned.indexOf('[');
+      const end = cleaned.lastIndexOf(']');
+      if (start !== -1 && end > start) {
+        const arr = JSON.parse(cleaned.slice(start, end + 1)) as Array<Record<string, unknown>>;
+        if (Array.isArray(arr) && arr.length >= 2) {
+          planned = arr.slice(0, 3).map((item, idx) => ({
+            role: idx === 0 ? 'cover' : idx === 1 ? 'inline_1' : 'inline_2',
+            aspectRatio: idx === 0 ? '16:9' : '4:3',
+            prompt: String(item.prompt || planned[0].prompt),
+            caption: String(item.caption || 'Иллюстрация к материалу'),
+            authenticity_note: String(item.authenticity_note || 'Естественный свет, без стоковых клише'),
+          }));
+        }
       }
+    } catch {
+      // Fallback to default documentary prompts above
     }
-  } catch {
-    // Fallback to default documentary prompts above
   }
 
   const results: ArticleImage[] = [];
@@ -116,5 +130,5 @@ ${articleMarkdown.slice(0, 1800)}
     }
   }
 
-  return { images: results, warnings };
+  return { images: results, warnings, tokensUsed };
 }

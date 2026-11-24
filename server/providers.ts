@@ -23,8 +23,15 @@ export function getGeminiClient(): GoogleGenAI | null {
 
 export function getProviderStatuses(): ProviderStatus[] {
   const hasGemini = Boolean(process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY !== 'MY_GEMINI_API_KEY');
+  const hasZai = Boolean(process.env.ZAI_API_KEY || process.env.ZHIPU_API_KEY);
   const hasOpenAI = Boolean(process.env.OPENAI_API_KEY);
   const hasDeepSeek = Boolean(process.env.DEEPSEEK_API_KEY);
+  const hasOpenRouter = Boolean(process.env.OPENROUTER_API_KEY);
+  const hasGroq = Boolean(process.env.GROQ_API_KEY);
+  const hasQwen = Boolean(process.env.QWEN_API_KEY || process.env.DASHSCOPE_API_KEY);
+  const hasMistral = Boolean(process.env.MISTRAL_API_KEY);
+  const hasXai = Boolean(process.env.XAI_API_KEY);
+  const hasTogether = Boolean(process.env.TOGETHER_API_KEY);
   const hasAnthropic = Boolean(process.env.ANTHROPIC_API_KEY);
   const hasYandex = Boolean(process.env.YANDEX_API_KEY && process.env.YANDEX_FOLDER_ID);
   const hasKandinsky = Boolean(process.env.KANDINSKY_API_KEY && process.env.KANDINSKY_SECRET_KEY);
@@ -40,12 +47,30 @@ export function getProviderStatuses(): ProviderStatus[] {
       defaultModel: 'gemini-4-hydrogen',
     },
     {
-      id: 'openai',
-      name: 'OpenAI / GPT',
+      id: 'zai',
+      name: 'Z.ai (Zhipu GLM)',
       kind: 'text',
-      configured: hasOpenAI,
-      note: hasOpenAI ? 'OPENAI_API_KEY задан' : 'Задайте OPENAI_API_KEY в .env',
-      defaultModel: 'gpt-4o',
+      configured: hasZai,
+      note: hasZai ? 'ZAI_API_KEY активен' : 'Задайте ZAI_API_KEY (или ZHIPU_API_KEY) в .env',
+      defaultModel: 'glm-4.5',
+    },
+    {
+      id: 'ollama',
+      name: 'Ollama (локально / self-hosted)',
+      kind: 'text',
+      configured: true,
+      note: process.env.OLLAMA_BASE_URL
+        ? `OLLAMA_BASE_URL: ${process.env.OLLAMA_BASE_URL}`
+        : 'Работает локально без ключа (URL задаётся в Настройках)',
+      defaultModel: 'qwen2.5:14b',
+    },
+    {
+      id: 'openrouter',
+      name: 'OpenRouter',
+      kind: 'text',
+      configured: hasOpenRouter,
+      note: hasOpenRouter ? 'OPENROUTER_API_KEY задан' : 'Задайте OPENROUTER_API_KEY в .env',
+      defaultModel: 'openai/gpt-4o-mini',
     },
     {
       id: 'deepseek',
@@ -54,6 +79,54 @@ export function getProviderStatuses(): ProviderStatus[] {
       configured: hasDeepSeek,
       note: hasDeepSeek ? 'DEEPSEEK_API_KEY задан' : 'Задайте DEEPSEEK_API_KEY в .env',
       defaultModel: 'deepseek-chat',
+    },
+    {
+      id: 'openai',
+      name: 'OpenAI / GPT',
+      kind: 'text',
+      configured: hasOpenAI,
+      note: hasOpenAI ? 'OPENAI_API_KEY задан' : 'Задайте OPENAI_API_KEY в .env',
+      defaultModel: 'gpt-4o',
+    },
+    {
+      id: 'groq',
+      name: 'Groq (LPU)',
+      kind: 'text',
+      configured: hasGroq,
+      note: hasGroq ? 'GROQ_API_KEY задан' : 'Задайте GROQ_API_KEY в .env',
+      defaultModel: 'llama-3.3-70b-versatile',
+    },
+    {
+      id: 'qwen',
+      name: 'Qwen (Alibaba DashScope)',
+      kind: 'text',
+      configured: hasQwen,
+      note: hasQwen ? 'QWEN_API_KEY задан' : 'Задайте QWEN_API_KEY (или DASHSCOPE_API_KEY) в .env',
+      defaultModel: 'qwen-plus',
+    },
+    {
+      id: 'mistral',
+      name: 'Mistral AI',
+      kind: 'text',
+      configured: hasMistral,
+      note: hasMistral ? 'MISTRAL_API_KEY задан' : 'Задайте MISTRAL_API_KEY в .env',
+      defaultModel: 'mistral-large-latest',
+    },
+    {
+      id: 'xai',
+      name: 'xAI (Grok)',
+      kind: 'text',
+      configured: hasXai,
+      note: hasXai ? 'XAI_API_KEY задан' : 'Задайте XAI_API_KEY в .env',
+      defaultModel: 'grok-3-mini',
+    },
+    {
+      id: 'together',
+      name: 'Together AI',
+      kind: 'text',
+      configured: hasTogether,
+      note: hasTogether ? 'TOGETHER_API_KEY задан' : 'Задайте TOGETHER_API_KEY в .env',
+      defaultModel: 'meta-llama/Llama-3.3-70B-Instruct-Turbo',
     },
     {
       id: 'anthropic',
@@ -75,8 +148,8 @@ export function getProviderStatuses(): ProviderStatus[] {
       id: 'custom_openai',
       name: 'Кастомный OpenAI-совместимый API',
       kind: 'text',
-      configured: hasOpenAI || hasDeepSeek,
-      note: 'Использует выбранный Base URL и ключ OPENAI_API_KEY / DEEPSEEK_API_KEY',
+      configured: Boolean(process.env.CUSTOM_OPENAI_API_KEY || hasOpenAI || hasDeepSeek || hasZai || hasOpenRouter),
+      note: 'Использует выбранный Base URL и ключ CUSTOM_OPENAI_API_KEY / OPENAI_API_KEY',
       defaultModel: 'gpt-4o-mini',
     },
     {
@@ -86,6 +159,14 @@ export function getProviderStatuses(): ProviderStatus[] {
       configured: hasGemini,
       note: hasGemini ? 'gemini-3.1-flash-lite-image / gemini-nano-banana-2.1' : 'Требуется GEMINI_API_KEY',
       defaultModel: 'gemini-3.1-flash-lite-image',
+    },
+    {
+      id: 'zai_image',
+      name: 'Z.ai CogView (Zhipu Images)',
+      kind: 'image',
+      configured: hasZai,
+      note: hasZai ? 'ZAI_API_KEY активен (cogview-4-250304)' : 'Требуется ZAI_API_KEY',
+      defaultModel: 'cogview-4-250304',
     },
     {
       id: 'kandinsky',
@@ -119,6 +200,7 @@ export interface TextGenerationOptions {
   prompt: string;
   jsonMode?: boolean;
   useSearchGrounding?: boolean;
+  useFastModel?: boolean;
   providerOverride?: TextProviderId;
   modelOverride?: string;
 }
@@ -127,6 +209,53 @@ export interface TextGenerationResult {
   text: string;
   groundingUrls: Array<{ title: string; uri: string }>;
   providerUsed: string;
+  tokensUsed: number;
+  fallbackFrom?: string;
+}
+
+export function isTextProviderConfigured(provider: TextProviderId): boolean {
+  switch (provider) {
+    case 'gemini':
+      return Boolean(process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY !== 'MY_GEMINI_API_KEY');
+    case 'zai':
+      return Boolean(process.env.ZAI_API_KEY || process.env.ZHIPU_API_KEY);
+    case 'ollama':
+      return true;
+    case 'openai':
+      return Boolean(process.env.OPENAI_API_KEY);
+    case 'deepseek':
+      return Boolean(process.env.DEEPSEEK_API_KEY);
+    case 'openrouter':
+      return Boolean(process.env.OPENROUTER_API_KEY);
+    case 'groq':
+      return Boolean(process.env.GROQ_API_KEY);
+    case 'qwen':
+      return Boolean(process.env.QWEN_API_KEY || process.env.DASHSCOPE_API_KEY);
+    case 'mistral':
+      return Boolean(process.env.MISTRAL_API_KEY);
+    case 'xai':
+      return Boolean(process.env.XAI_API_KEY);
+    case 'together':
+      return Boolean(process.env.TOGETHER_API_KEY);
+    case 'anthropic':
+      return Boolean(process.env.ANTHROPIC_API_KEY);
+    case 'yandex':
+      return Boolean(process.env.YANDEX_API_KEY && process.env.YANDEX_FOLDER_ID);
+    case 'custom_openai':
+      return Boolean(
+        process.env.CUSTOM_OPENAI_API_KEY ||
+          process.env.OPENAI_API_KEY ||
+          process.env.DEEPSEEK_API_KEY ||
+          process.env.ZAI_API_KEY ||
+          process.env.OPENROUTER_API_KEY,
+      );
+    default:
+      return false;
+  }
+}
+
+function estimateTokens(systemInstruction: string, prompt: string, output: string): number {
+  return Math.max(1, Math.ceil((systemInstruction.length + prompt.length + output.length) / 3.5));
 }
 
 interface ParsedProviderError {
@@ -286,20 +415,35 @@ async function callGeminiModel(
     .filter((w): w is { uri: string; title?: string } => Boolean(w?.uri))
     .map((w) => ({ uri: w.uri, title: w.title || w.uri }));
 
+  const text = (response.text ?? '').trim();
+  const usageTotal =
+    response.usageMetadata?.totalTokenCount ||
+    estimateTokens(opts.systemInstruction, opts.prompt, text);
+
   return {
-    text: (response.text ?? '').trim(),
+    text,
     groundingUrls,
     providerUsed: `gemini:${targetModel}`,
+    tokensUsed: Number(usageTotal) || 0,
   };
 }
 
-export async function generateText(
+const SAME_PROVIDER_LIGHT_MODEL: Partial<Record<TextProviderId, { fromNotEqual: string; to: string }>> = {
+  gemini: { fromNotEqual: 'gemini-3.1-flash-lite', to: 'gemini-3.1-flash-lite' },
+  openai: { fromNotEqual: 'gpt-4o-mini', to: 'gpt-4o-mini' },
+  zai: { fromNotEqual: 'glm-4.5-flash', to: 'glm-4.5-flash' },
+  qwen: { fromNotEqual: 'qwen-turbo', to: 'qwen-turbo' },
+  mistral: { fromNotEqual: 'mistral-small-latest', to: 'mistral-small-latest' },
+  xai: { fromNotEqual: 'grok-3-mini', to: 'grok-3-mini' },
+  anthropic: { fromNotEqual: 'claude-3-5-haiku-latest', to: 'claude-3-5-haiku-latest' },
+};
+
+async function generateTextSingle(
   settings: AppSettings,
+  provider: TextProviderId,
+  model: string,
   opts: TextGenerationOptions,
 ): Promise<TextGenerationResult> {
-  const provider = opts.providerOverride || settings.text_provider;
-  const model = opts.modelOverride || settings.text_model;
-
   if (provider === 'gemini') {
     const ai = getGeminiClient();
     if (!ai) {
@@ -323,26 +467,150 @@ export async function generateText(
     }
   }
 
-  if (provider === 'openai' || provider === 'deepseek' || provider === 'custom_openai') {
-    const isDeepSeek = provider === 'deepseek';
-    const apiKey = isDeepSeek ? process.env.DEEPSEEK_API_KEY : (process.env.OPENAI_API_KEY || process.env.DEEPSEEK_API_KEY);
-    if (!apiKey) {
-      throw new Error(`API-ключ для провайдера "${provider}" не задан в переменных окружения сервера.`);
-    }
-    const baseUrl = (
-      provider === 'custom_openai'
-        ? settings.custom_openai_base_url
-        : isDeepSeek
-          ? (process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com/v1')
-          : (process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1')
-    )
-      .trim()
-      .replace(/\/+$/, '');
+  const openAiCompatibleSet = new Set<TextProviderId>([
+    'zai',
+    'ollama',
+    'openai',
+    'deepseek',
+    'openrouter',
+    'groq',
+    'qwen',
+    'mistral',
+    'xai',
+    'together',
+    'custom_openai',
+  ]);
 
-    const targetModel =
-      provider === 'custom_openai'
-        ? settings.custom_openai_model
-        : model || (isDeepSeek ? 'deepseek-chat' : 'gpt-4o');
+  if (openAiCompatibleSet.has(provider)) {
+    const resolveConfig = (): {
+      apiKey: string | undefined;
+      requireKey: boolean;
+      baseUrl: string;
+      defaultModel: string;
+      supportsJsonObject: boolean;
+      extraHeaders?: Record<string, string>;
+      envHint: string;
+    } => {
+      switch (provider) {
+        case 'zai':
+          return {
+            apiKey: process.env.ZAI_API_KEY || process.env.ZHIPU_API_KEY,
+            requireKey: true,
+            baseUrl: process.env.ZAI_BASE_URL || process.env.ZHIPU_BASE_URL || 'https://api.z.ai/api/paas/v4',
+            defaultModel: 'glm-4.5',
+            supportsJsonObject: false,
+            envHint: 'ZAI_API_KEY',
+          };
+        case 'ollama':
+          return {
+            apiKey: process.env.OLLAMA_API_KEY,
+            requireKey: false,
+            baseUrl: settings.ollama_base_url || process.env.OLLAMA_BASE_URL || 'http://127.0.0.1:11434/v1',
+            defaultModel: 'qwen2.5:14b',
+            supportsJsonObject: false,
+            envHint: 'OLLAMA_BASE_URL',
+          };
+        case 'deepseek':
+          return {
+            apiKey: process.env.DEEPSEEK_API_KEY,
+            requireKey: true,
+            baseUrl: process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com/v1',
+            defaultModel: 'deepseek-chat',
+            supportsJsonObject: true,
+            envHint: 'DEEPSEEK_API_KEY',
+          };
+        case 'openrouter':
+          return {
+            apiKey: process.env.OPENROUTER_API_KEY,
+            requireKey: true,
+            baseUrl: process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1',
+            defaultModel: 'openai/gpt-4o-mini',
+            supportsJsonObject: false,
+            extraHeaders: {
+              'HTTP-Referer': process.env.APP_URL || 'http://igrovoikompas.ru/dzen/',
+              'X-Title': 'Dzen AI Studio',
+            },
+            envHint: 'OPENROUTER_API_KEY',
+          };
+        case 'groq':
+          return {
+            apiKey: process.env.GROQ_API_KEY,
+            requireKey: true,
+            baseUrl: process.env.GROQ_BASE_URL || 'https://api.groq.com/openai/v1',
+            defaultModel: 'llama-3.3-70b-versatile',
+            supportsJsonObject: true,
+            envHint: 'GROQ_API_KEY',
+          };
+        case 'qwen':
+          return {
+            apiKey: process.env.QWEN_API_KEY || process.env.DASHSCOPE_API_KEY,
+            requireKey: true,
+            baseUrl: process.env.QWEN_BASE_URL || 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
+            defaultModel: 'qwen-plus',
+            supportsJsonObject: true,
+            envHint: 'QWEN_API_KEY',
+          };
+        case 'mistral':
+          return {
+            apiKey: process.env.MISTRAL_API_KEY,
+            requireKey: true,
+            baseUrl: process.env.MISTRAL_BASE_URL || 'https://api.mistral.ai/v1',
+            defaultModel: 'mistral-large-latest',
+            supportsJsonObject: true,
+            envHint: 'MISTRAL_API_KEY',
+          };
+        case 'xai':
+          return {
+            apiKey: process.env.XAI_API_KEY,
+            requireKey: true,
+            baseUrl: process.env.XAI_BASE_URL || 'https://api.x.ai/v1',
+            defaultModel: 'grok-3-mini',
+            supportsJsonObject: true,
+            envHint: 'XAI_API_KEY',
+          };
+        case 'together':
+          return {
+            apiKey: process.env.TOGETHER_API_KEY,
+            requireKey: true,
+            baseUrl: process.env.TOGETHER_BASE_URL || 'https://api.together.xyz/v1',
+            defaultModel: 'meta-llama/Llama-3.3-70B-Instruct-Turbo',
+            supportsJsonObject: false,
+            envHint: 'TOGETHER_API_KEY',
+          };
+        case 'custom_openai':
+          return {
+            apiKey:
+              process.env.CUSTOM_OPENAI_API_KEY ||
+              process.env.OPENAI_API_KEY ||
+              process.env.DEEPSEEK_API_KEY ||
+              process.env.ZAI_API_KEY ||
+              process.env.OPENROUTER_API_KEY,
+            requireKey: true,
+            baseUrl: settings.custom_openai_base_url || process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1',
+            defaultModel: settings.custom_openai_model || 'gpt-4o-mini',
+            supportsJsonObject: false,
+            envHint: 'CUSTOM_OPENAI_API_KEY или OPENAI_API_KEY',
+          };
+        case 'openai':
+        default:
+          return {
+            apiKey: process.env.OPENAI_API_KEY,
+            requireKey: true,
+            baseUrl: process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1',
+            defaultModel: 'gpt-4o',
+            supportsJsonObject: true,
+            envHint: 'OPENAI_API_KEY',
+          };
+      }
+    };
+
+    const cfg = resolveConfig();
+    if (cfg.requireKey && !cfg.apiKey) {
+      throw new Error(`API-ключ для провайдера "${provider}" (${cfg.envHint}) не задан в .env сервера.`);
+    }
+
+    const baseUrl = cfg.baseUrl.trim().replace(/\/+$/, '');
+    const targetModel = provider === 'custom_openai' ? settings.custom_openai_model || cfg.defaultModel : model || cfg.defaultModel;
 
     const isResponsesApi = baseUrl.endsWith('/responses');
     const endpoint =
@@ -364,31 +632,50 @@ export async function generateText(
           ],
         };
 
-    if (opts.jsonMode && !isResponsesApi && provider !== 'custom_openai') {
+    if (opts.jsonMode && !isResponsesApi && cfg.supportsJsonObject) {
       body.response_format = { type: 'json_object' };
     }
 
-    const res = await withRetry(async () => {
-      const r = await fetch(endpoint, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${apiKey}`,
-        },
-        body: JSON.stringify(body),
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      ...(cfg.extraHeaders || {}),
+    };
+    if (cfg.apiKey) {
+      headers.Authorization = `Bearer ${cfg.apiKey}`;
+    }
+
+    let res;
+    try {
+      res = await withRetry(async () => {
+        const r = await fetch(endpoint, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(body),
+        });
+        if (!r.ok) {
+          const errText = await r.text();
+          throw new Error(`Ошибка ${provider} (${r.status}): ${errText.slice(0, 300)}`);
+        }
+        return r.json() as Promise<{
+          output_text?: string;
+          output?: Array<{ content?: Array<{ text?: string }> }>;
+          choices?: Array<{ message?: { content?: string } }>;
+          text?: string;
+          response?: string;
+          usage?: { total_tokens?: number; prompt_tokens?: number; completion_tokens?: number };
+        }>;
       });
-      if (!r.ok) {
-        const errText = await r.text();
-        throw new Error(`Ошибка ${provider} (${r.status}): ${errText.slice(0, 300)}`);
+    } catch (err) {
+      if (provider === 'ollama') {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (msg.toLowerCase().includes('fetch failed') || msg.toLowerCase().includes('econnrefused')) {
+          throw new Error(
+            `Не удалось подключиться к Ollama по адресу ${baseUrl}. Убедитесь, что Ollama запущен (для Docker на VPS используйте http://host.docker.internal:11434/v1 и OLLAMA_HOST=0.0.0.0).`,
+          );
+        }
       }
-      return r.json() as Promise<{
-        output_text?: string;
-        output?: Array<{ content?: Array<{ text?: string }> }>;
-        choices?: Array<{ message?: { content?: string } }>;
-        text?: string;
-        response?: string;
-      }>;
-    });
+      throw formatProviderError(provider, targetModel, err);
+    }
 
     const outputFromBlocks = Array.isArray(res.output)
       ? res.output
@@ -397,18 +684,25 @@ export async function generateText(
           .join('')
       : '';
 
-    const extractedText =
+    const extractedText = (
       res.choices?.[0]?.message?.content ||
       res.output_text ||
       outputFromBlocks ||
       res.response ||
       res.text ||
-      '';
+      ''
+    ).trim();
+
+    const tokensUsed =
+      res.usage?.total_tokens ||
+      ((res.usage?.prompt_tokens || 0) + (res.usage?.completion_tokens || 0)) ||
+      estimateTokens(opts.systemInstruction, opts.prompt, extractedText);
 
     return {
-      text: extractedText.trim(),
+      text: extractedText,
       groundingUrls: [],
       providerUsed: `${provider}:${targetModel}`,
+      tokensUsed: Number(tokensUsed) || 0,
     };
   }
 
@@ -437,13 +731,22 @@ export async function generateText(
         const errText = await r.text();
         throw new Error(`Ошибка Anthropic (${r.status}): ${errText.slice(0, 300)}`);
       }
-      return r.json() as Promise<{ content?: Array<{ text?: string }> }>;
+      return r.json() as Promise<{
+        content?: Array<{ text?: string }>;
+        usage?: { input_tokens?: number; output_tokens?: number };
+      }>;
     });
 
+    const text = (res.content?.[0]?.text || '').trim();
+    const tokensUsed =
+      ((res.usage?.input_tokens || 0) + (res.usage?.output_tokens || 0)) ||
+      estimateTokens(opts.systemInstruction, opts.prompt, text);
+
     return {
-      text: (res.content?.[0]?.text || '').trim(),
+      text,
       groundingUrls: [],
       providerUsed: `anthropic:${targetModel}`,
+      tokensUsed,
     };
   }
 
@@ -475,17 +778,99 @@ export async function generateText(
         const errText = await r.text();
         throw new Error(`Ошибка YandexGPT (${r.status}): ${errText.slice(0, 300)}`);
       }
-      return r.json() as Promise<{ result?: { alternatives?: Array<{ message?: { text?: string } }> } }>;
+      return r.json() as Promise<{
+        result?: {
+          alternatives?: Array<{ message?: { text?: string } }>;
+          usage?: { totalTokens?: string | number };
+        };
+      }>;
     });
 
+    const text = (res.result?.alternatives?.[0]?.message?.text || '').trim();
+    const tokensUsed = Number(res.result?.usage?.totalTokens) || estimateTokens(opts.systemInstruction, opts.prompt, text);
+
     return {
-      text: (res.result?.alternatives?.[0]?.message?.text || '').trim(),
+      text,
       groundingUrls: [],
       providerUsed: `yandex:${modelUri}`,
+      tokensUsed,
     };
   }
 
   throw new Error(`Неизвестный провайдер текста: ${provider}`);
+}
+
+export async function generateText(
+  settings: AppSettings,
+  opts: TextGenerationOptions,
+): Promise<TextGenerationResult> {
+  const primaryProvider = opts.providerOverride || settings.text_provider;
+  const primaryModel =
+    opts.modelOverride ||
+    (opts.useFastModel && settings.fast_model?.trim() && !opts.providerOverride
+      ? settings.fast_model.trim()
+      : settings.text_model);
+
+  let primaryError: unknown;
+  try {
+    return await generateTextSingle(settings, primaryProvider, primaryModel, opts);
+  } catch (err) {
+    primaryError = err;
+
+    // 1. Попробовать облегчённую модель того же провайдера при 429/квоте
+    if (settings.auto_fallback_enabled) {
+      const lightRule = SAME_PROVIDER_LIGHT_MODEL[primaryProvider];
+      if (lightRule && primaryModel !== lightRule.fromNotEqual && primaryProvider !== 'gemini') {
+        const parsed = parseProviderError(err);
+        if (parsed.isQuotaOrRateLimit) {
+          try {
+            const lightRes = await generateTextSingle(settings, primaryProvider, lightRule.to, opts);
+            return { ...lightRes, fallbackFrom: `${primaryProvider}:${primaryModel}` };
+          } catch {
+            // move to cross-provider chain
+          }
+        }
+      }
+    }
+  }
+
+  // 2. Цепочка автопереключения на резервных поставщиков/модели
+  if (
+    settings.auto_fallback_enabled &&
+    !opts.providerOverride &&
+    Array.isArray(settings.fallback_providers) &&
+    settings.fallback_providers.length > 0
+  ) {
+    const errors: string[] = [
+      `${primaryProvider}:${primaryModel} → ${primaryError instanceof Error ? primaryError.message : String(primaryError)}`,
+    ];
+
+    for (const target of settings.fallback_providers) {
+      if (!target?.provider || !isTextProviderConfigured(target.provider)) {
+        continue;
+      }
+      if (target.provider === primaryProvider && target.model === primaryModel) {
+        continue;
+      }
+      try {
+        const fallbackOpts: TextGenerationOptions = {
+          ...opts,
+          useSearchGrounding: target.provider === 'gemini' ? opts.useSearchGrounding : false,
+        };
+        const res = await generateTextSingle(settings, target.provider, target.model, fallbackOpts);
+        return {
+          ...res,
+          fallbackFrom: `${primaryProvider}:${primaryModel}`,
+        };
+      } catch (fbErr) {
+        errors.push(`${target.provider}:${target.model} → ${fbErr instanceof Error ? fbErr.message : String(fbErr)}`);
+      }
+    }
+
+    throw new Error(`Основной и резервные провайдеры недоступны. ${errors[0]}`);
+  }
+
+  throw primaryError instanceof Error ? primaryError : new Error(String(primaryError));
 }
 
 export async function testTextProvider(settings: AppSettings): Promise<{ ok: boolean; providerUsed?: string; sample?: string; error?: string }> {
@@ -493,6 +878,8 @@ export async function testTextProvider(settings: AppSettings): Promise<{ ok: boo
     const res = await generateText(settings, {
       systemInstruction: 'Ответь кратко одним-двумя словами на русском: Связь ОК.',
       prompt: 'Проверка подключения к модели генерации.',
+      providerOverride: settings.text_provider,
+      modelOverride: settings.text_model,
     });
     return {
       ok: true,
@@ -503,6 +890,32 @@ export async function testTextProvider(settings: AppSettings): Promise<{ ok: boo
     return {
       ok: false,
       error: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
+export async function fetchOllamaModels(baseUrl: string): Promise<{ models: string[]; error?: string }> {
+  const clean = (baseUrl || 'http://127.0.0.1:11434/v1').trim().replace(/\/+$/, '').replace(/\/v1$/, '');
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 4500);
+  try {
+    const headers: Record<string, string> = {};
+    if (process.env.OLLAMA_API_KEY) {
+      headers.Authorization = `Bearer ${process.env.OLLAMA_API_KEY}`;
+    }
+    const r = await fetch(`${clean}/api/tags`, { signal: controller.signal, headers });
+    clearTimeout(timer);
+    if (!r.ok) {
+      return { models: [], error: `Ollama вернула статус ${r.status}` };
+    }
+    const data = (await r.json()) as { models?: Array<{ name?: string; model?: string }> };
+    const models = (data.models || []).map((m) => m.name || m.model || '').filter(Boolean);
+    return { models };
+  } catch {
+    clearTimeout(timer);
+    return {
+      models: [],
+      error: `Нет ответа от Ollama (${clean}). Проверьте, что сервер запущен и доступен.`,
     };
   }
 }
@@ -569,6 +982,44 @@ export async function generateImageBytes(
       }
     }
     throw new Error('Модель Gemini не вернула изображение.');
+  }
+
+  if (provider === 'zai') {
+    const apiKey = process.env.ZAI_API_KEY || process.env.ZHIPU_API_KEY;
+    if (!apiKey) {
+      throw new Error('ZAI_API_KEY не задан для генерации изображений Z.ai CogView.');
+    }
+    const baseUrl = (process.env.ZAI_BASE_URL || process.env.ZHIPU_BASE_URL || 'https://api.z.ai/api/paas/v4')
+      .trim()
+      .replace(/\/+$/, '');
+    const targetModel = settings.image_model || 'cogview-4-250304';
+    const size = aspectRatio === '16:9' ? '1344x768' : aspectRatio === '4:3' ? '1152x864' : '1024x1024';
+    const r = await fetch(`${baseUrl}/images/generations`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: targetModel,
+        prompt,
+        size,
+      }),
+    });
+    if (!r.ok) {
+      throw new Error(`Ошибка Z.ai CogView (${r.status}): ${(await r.text()).slice(0, 200)}`);
+    }
+    const data = (await r.json()) as { data?: Array<{ url?: string; b64_json?: string }> };
+    const b64 = data.data?.[0]?.b64_json;
+    if (b64) {
+      return { buffer: Buffer.from(b64, 'base64'), mimeType: 'image/png', providerUsed: `zai:${targetModel}` };
+    }
+    if (data.data?.[0]?.url) {
+      const imgRes = await fetch(data.data[0].url);
+      const ab = await imgRes.arrayBuffer();
+      return { buffer: Buffer.from(ab), mimeType: 'image/png', providerUsed: `zai:${targetModel}` };
+    }
+    throw new Error('Z.ai CogView не вернул изображение.');
   }
 
   if (provider === 'openai') {

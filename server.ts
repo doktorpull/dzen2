@@ -20,7 +20,7 @@ import {
   publishArticleViaTelegram,
 } from './server/export.ts';
 import { pipelineEmitter, rerunArticleStage, runArticlePipeline } from './server/pipeline.ts';
-import { generateEmbedding, getProviderStatuses, testTextProvider } from './server/providers.ts';
+import { fetchOllamaModels, generateEmbedding, getProviderStatuses, testTextProvider } from './server/providers.ts';
 import { discoverAndScoreTopics } from './server/trends.ts';
 import type { Article, Niche, RagSample } from './server/types.ts';
 import { computeTextFingerprint, markdownToCleanHtml, runFinalValidator } from './server/validator.ts';
@@ -540,6 +540,16 @@ function buildApiRouter(): express.Router {
     const candidate = { ...current, ...override };
     const result = await testTextProvider(candidate);
     res.status(result.ok ? 200 : 400).json(result);
+  });
+
+  api.get('/settings/ollama-models', async (req, res) => {
+    const baseUrl = String(req.query.baseUrl || getSettings().ollama_base_url || 'http://127.0.0.1:11434/v1').trim();
+    if (!/^https?:\/\//i.test(baseUrl)) {
+      res.status(400).json({ models: [], error: 'Некорректный URL сервера Ollama.' });
+      return;
+    }
+    const result = await fetchOllamaModels(baseUrl);
+    res.json(result);
   });
 
   return api;

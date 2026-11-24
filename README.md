@@ -7,7 +7,7 @@
 - **Модуль 2 (7-этапный пайплайн и 10-пт Валидатор):** *Стратег → SEO-оптимизатор → Архитектор → Писатель → Детектор + Стилист + Инжектор человечности → Фактчекер → Редактор*, библиотека стиля RAG, справочник CPA-офферов и детерминированный 10-пунктный чек-лист приёмки.
 - **Модуль 3 (Визуал):** генерация не-стоковых обложек (`16:9`) и внутренних иллюстраций (`4:3`).
 - **Модуль 4 (Выдача и публикация):** режим по умолчанию **«Копирование с вёрсткой»** (HTML-буфер, `.docx`, `.md`, `.html`, `.zip`-архив картинок) и опциональная отправка в Telegram-канал для `@zen_sync_bot` по тумблеру в админке.
-- **Мультипровайдерность:** серверный адаптер для Gemini, OpenAI, DeepSeek, Anthropic Claude, YandexGPT, кастомных OpenAI-совместимых API и Kandinsky.
+- **Мультипровайдерность:** серверный адаптер для Gemini, Z.ai (Zhipu GLM + CogView), Ollama (локально / self-hosted), OpenRouter, DeepSeek, OpenAI, Groq, Qwen, Mistral, xAI Grok, Together AI, Anthropic Claude, YandexGPT, кастомных OpenAI-совместимых API и Kandinsky.
 
 ---
 
@@ -63,11 +63,18 @@ ADMIN_USERNAME="admin"
 ADMIN_PASSWORD="задайте_сложный_пароль"
 SESSION_SECRET="сгенерируйте_случайную_строку_64_символа"
 
-# Нужен хотя бы один текстовый провайдер:
+# Нужен хотя бы один текстовый провайдер (или локальная Ollama):
 GEMINI_API_KEY="ваш_ключ_gemini"
-# И/или другие провайдеры:
-# OPENAI_API_KEY=""
+# ZAI_API_KEY=""          # Z.ai (Zhipu GLM + CogView)
+# OLLAMA_BASE_URL="http://host.docker.internal:11434/v1" # Ollama на хосте VPS
+# OPENROUTER_API_KEY=""   # Единый ключ к 200+ моделям
 # DEEPSEEK_API_KEY=""
+# OPENAI_API_KEY=""
+# GROQ_API_KEY=""
+# QWEN_API_KEY=""
+# MISTRAL_API_KEY=""
+# XAI_API_KEY=""
+# TOGETHER_API_KEY=""
 # ANTHROPIC_API_KEY=""
 # YANDEX_API_KEY=""
 # YANDEX_FOLDER_ID=""

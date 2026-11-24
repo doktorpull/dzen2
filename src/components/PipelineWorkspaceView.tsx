@@ -331,6 +331,14 @@ export function PipelineWorkspaceView({
                       </span>
                     </>
                   )}
+                  {item.tokens_used > 0 && (
+                    <>
+                      <span aria-hidden="true">·</span>
+                      <span className="font-mono tabular-nums text-slate-500 dark:text-slate-400">
+                        ~{item.tokens_used.toLocaleString('ru-RU')} ток.
+                      </span>
+                    </>
+                  )}
                 </div>
               </div>
             );
@@ -353,6 +361,14 @@ export function PipelineWorkspaceView({
                   <span className={(ARTICLE_STATUS_MAP[article.status] || ARTICLE_STATUS_MAP.queued).cls}>
                     {(ARTICLE_STATUS_MAP[article.status] || ARTICLE_STATUS_MAP.queued).label}
                   </span>
+                  {article.tokens_used > 0 && (
+                    <>
+                      <span aria-hidden="true">·</span>
+                      <span className="font-mono tabular-nums text-slate-600 dark:text-slate-300">
+                        ~{article.tokens_used.toLocaleString('ru-RU')} ток.
+                      </span>
+                    </>
+                  )}
                 </div>
                 <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100 leading-snug">{article.title}</h2>
                 {article.subtitle && <p className="text-sm text-slate-600 dark:text-slate-400">{article.subtitle}</p>}

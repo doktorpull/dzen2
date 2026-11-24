@@ -75,43 +75,29 @@ export async function discoverAndScoreTopics(nicheId: number, customFocus = ''):
   ]);
 
   const rawSignals = [
-    ...newsFeed.slice(0, 8).map((i) => `[Новости] ${i.title} (${i.link})`),
-    ...googleTrends.slice(0, 8).map((i) => `[Google Trends RU] ${i.title}`),
+    ...newsFeed.slice(0, 8).map((i) => `[Новости] ${i.title.slice(0, 95)}`),
+    ...googleTrends.slice(0, 8).map((i) => `[Trends] ${i.title.slice(0, 95)}`),
   ];
 
   const useGoogleSearch = settings.text_provider === 'gemini';
 
-  const systemInstruction = `Ты — аналитик трендов Дзена (Модуль 1). Твоя задача: отобрать и сформулировать 6 сильных, не кликбейтных тем с высоким потенциалом дочитывания и нативного встраивания CPA-оффера.
-Отвечай строго JSON-массивом объектов без пояснений вокруг.`;
+  const systemInstruction = `Ты — аналитик трендов Дзена (Модуль 1). Отобери 6 сильных, не кликбейтных тем с высоким потенциалом дочитывания и нативного встраивания CPA-оффера. Отвечай строго JSON-массивом.`;
 
-  const prompt = `Ниша: "${niche.name}"
-Контекст монетизации и CPA: ${niche.cpa_notes || 'партнёрские рекомендации'}
-Тон ниши: ${niche.default_tone}
-${customFocus ? `Дополнительный фокус от редактора: ${customFocus}` : ''}
+  const prompt = `Ниша: "${niche.name}" | Тон: ${niche.default_tone}
+CPA: ${niche.cpa_notes || 'партнёрские рекомендации'}${customFocus ? `\nФокус: ${customFocus}` : ''}
 
-Свежие сигналы из открытых лент за последние часы:
+Свежие сигналы:
 ${rawSignals.length > 0 ? rawSignals.join('\n') : 'Ленты недоступны — используй актуальный поиск инфоповодов.'}
 
-Сформируй ровно 6 тем для статей в Дзен. Каждая тема должна цеплять в первых 3 абзацах и позволять показать конкретику/цифры/кейс.
-Верни JSON-массив объектов со следующими полями:
-[
-  {
-    "title": "Заголовок статьи (без кликбейта, до 90 символов)",
-    "angle": "Угол подачи и чем зацепить в первых 3 абзацах",
-    "source_url": "Ссылка на инфоповод если есть, иначе пустая строка",
-    "demand_score": 82,
-    "competition_score": 45,
-    "niche_fit_score": 90,
-    "cpa_score": 78
-  }
-]
-Где competition_score — уровень конкуренции (чем ниже, тем лучше, но приоритет рассчитывается с учётом свободы ниши).`;
+Верни JSON-массив из 6 тем:
+[{"title":"до 90 символов","angle":"угол и крючок первых 3 абзацев","source_url":"","demand_score":82,"competition_score":45,"niche_fit_score":90,"cpa_score":78}]`;
 
   const result = await generateText(settings, {
     systemInstruction,
     prompt,
     jsonMode: !useGoogleSearch,
     useSearchGrounding: useGoogleSearch,
+    useFastModel: true,
   });
 
   const parsed = extractJsonArray(result.text);
