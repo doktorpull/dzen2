@@ -79,7 +79,7 @@ export async function discoverAndScoreTopics(nicheId: number, customFocus = ''):
     ...googleTrends.slice(0, 8).map((i) => `[Trends] ${i.title.slice(0, 95)}`),
   ];
 
-  const useGoogleSearch = settings.text_provider === 'gemini';
+  const useGoogleSearch = settings.text_provider === 'gemini' && rawSignals.length === 0 && settings.pipeline_mode === 'full';
 
   const systemInstruction = `Ты — аналитик трендов Дзена (Модуль 1). Отобери 6 сильных, не кликбейтных тем с высоким потенциалом дочитывания и нативного встраивания CPA-оффера. Отвечай строго JSON-массивом.`;
 

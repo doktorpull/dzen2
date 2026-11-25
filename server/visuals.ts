@@ -127,6 +127,10 @@ ${articleMarkdown.slice(0, 1200)}
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       warnings.push(`Изображение (${item.role}): ${message}`);
+      const lower = message.toLowerCase();
+      if (lower.includes('429') || lower.includes('квота') || lower.includes('лимит') || lower.includes('401') || lower.includes('403')) {
+        break;
+      }
     }
   }
 

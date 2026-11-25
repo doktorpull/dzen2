@@ -359,6 +359,17 @@ export function formatProviderError(provider: string, model: string, err: unknow
   return new Error(`Ошибка ${provider} (${model}): ${parsed.rawMessage.slice(0, 320)}`);
 }
 
+let lastGeminiCallAt = 0;
+const GEMINI_MIN_INTERVAL_MS = 4500;
+
+async function paceGeminiCall(): Promise<void> {
+  const elapsed = Date.now() - lastGeminiCallAt;
+  if (lastGeminiCallAt > 0 && elapsed < GEMINI_MIN_INTERVAL_MS) {
+    await new Promise((r) => setTimeout(r, GEMINI_MIN_INTERVAL_MS - elapsed));
+  }
+  lastGeminiCallAt = Date.now();
+}
+
 async function withRetry<T>(fn: () => Promise<T>, retries = 2): Promise<T> {
   let lastErr: unknown;
   for (let i = 0; i <= retries; i++) {
@@ -367,14 +378,15 @@ async function withRetry<T>(fn: () => Promise<T>, retries = 2): Promise<T> {
     } catch (err) {
       lastErr = err;
       const parsed = parseProviderError(err);
-      if (!parsed.isTransient || i >= retries) {
+      const isHardQuota = parsed.rawMessage.toLowerCase().includes('exceeded your current quota');
+      if (!parsed.isTransient || isHardQuota || i >= retries) {
         break;
       }
       const waitMs =
-        parsed.retryDelayMs && parsed.retryDelayMs <= 12000
-          ? parsed.retryDelayMs + 400
+        parsed.retryDelayMs && parsed.retryDelayMs <= 20000
+          ? parsed.retryDelayMs + 500
           : parsed.isQuotaOrRateLimit
-            ? 2500 * (i + 1)
+            ? 3500 * (i + 1)
             : 1000 * (i + 1);
       await new Promise((r) => setTimeout(r, waitMs));
     }
@@ -392,7 +404,7 @@ async function callGeminiModel(
   };
 
   if (targetModel === 'gemini-4-hydrogen') {
-    config.thinkingConfig = { thinkingLevel: ThinkingLevel.MEDIUM };
+    config.thinkingConfig = { thinkingLevel: opts.useFastModel ? ThinkingLevel.LOW : ThinkingLevel.MEDIUM };
   }
   if (opts.jsonMode && !opts.useSearchGrounding) {
     config.responseMimeType = 'application/json';
@@ -401,13 +413,14 @@ async function callGeminiModel(
     config.tools = [{ googleSearch: {} }];
   }
 
-  const response = await withRetry(() =>
-    ai.models.generateContent({
+  const response = await withRetry(async () => {
+    await paceGeminiCall();
+    return ai.models.generateContent({
       model: targetModel,
       contents: opts.prompt,
       config,
-    }),
-  );
+    });
+  });
 
   const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks ?? [];
   const groundingUrls = chunks
@@ -449,8 +462,8 @@ async function generateTextSingle(
     if (!ai) {
       throw new Error('GEMINI_API_KEY не настроен на сервере. Добавьте ключ в окружение или выберите другой провайдер в «Настройках».');
     }
-    const validGeminiModels = ['gemini-4-hydrogen', 'gemini-4-argon', 'gemini-4-carbon', 'gemini-3.1-flash-lite'];
-    const targetModel = validGeminiModels.includes(model) ? model : 'gemini-4-hydrogen';
+    const trimmedModel = (model || '').trim();
+    const targetModel = trimmedModel && trimmedModel.startsWith('gemini') ? trimmedModel : 'gemini-4-hydrogen';
 
     try {
       return await callGeminiModel(ai, targetModel, opts);

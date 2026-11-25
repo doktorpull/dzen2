@@ -351,6 +351,11 @@ export function SettingsView({ settings, providers, onUpdated }: SettingsViewPro
               <option value="openai">OpenAI Images</option>
               <option value="disabled">Отключено (только текст)</option>
             </select>
+            {form.image_provider === 'gemini' && (
+              <p className="mt-1 text-[11px] text-amber-700 dark:text-amber-400 leading-snug">
+                Генерация картинок Gemini требует платного тарифа AI Studio. Для работы на бесплатном ключе выберите «Отключено», Kandinsky или Z.ai.
+              </p>
+            )}
           </div>
 
           <div>

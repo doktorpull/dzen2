@@ -126,13 +126,13 @@ function updateStage(
   });
 }
 
-async function evaluateAndSave(articleId: number, markdown: string, nicheId: number) {
+async function evaluateAndSave(articleId: number, markdown: string, nicheId: number, skipEmbedding = false) {
   const cleanedMd = autoCleanArticleText(markdown);
   const cleanHtml = markdownToCleanHtml(cleanedMd);
   const ragSamples = db
     .prepare('SELECT * FROM rag_samples WHERE niche_id = ? ORDER BY id DESC LIMIT 10')
     .all(nicheId) as RagSample[];
-  const embedding = await generateEmbedding(cleanedMd);
+  const embedding = !skipEmbedding && ragSamples.length > 0 ? await generateEmbedding(cleanedMd) : null;
   const report = runFinalValidator(cleanedMd, cleanHtml, ragSamples, embedding);
 
   const nextStatus = report.overall_status === 'ready' ? 'ready' : 'needs_review';
@@ -737,7 +737,6 @@ ${draftText}`,
         if (!opts.resume || stages[5].status !== 'done') {
           const t0 = Date.now();
           updateStage(articleId, stages, 5, { status: 'running' });
-          const useSearchForFactcheck = settings.text_provider === 'gemini';
           const factRes = await generateText(settings, {
             systemInstruction:
               'Ты — строгий фактчекер редакции. Проверь текст на сомнительные цифры, неподтверждённые законы/ставки, медицинские/финансовые риски и возможные галлюцинации. Отвечай JSON-массивом объектов-флагов для ручной проверки редактором (если всё чисто — верни пустой массив []).',
@@ -754,8 +753,7 @@ ${stylistText}
     "suggestion": "Как уточнить или переформулировать"
   }
 ]`,
-            jsonMode: !useSearchForFactcheck,
-            useSearchGrounding: useSearchForFactcheck,
+            jsonMode: true,
             useFastModel: true,
           });
           recordGeneration(factRes);
@@ -806,7 +804,7 @@ ${stylistText}
       generateArticleVisuals(articleId, finalTitle, niche.name, finalCandidateText, {
         skipLlmPrompting: mode !== 'full',
       }),
-      evaluateAndSave(articleId, finalCandidateText, niche.id),
+      evaluateAndSave(articleId, finalCandidateText, niche.id, mode === 'economy'),
     ]);
     totalTokens += visualsRes.tokensUsed || 0;
     const { images, warnings } = visualsRes;
