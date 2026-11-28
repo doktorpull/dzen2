@@ -283,6 +283,57 @@ function buildApiRouter(): express.Router {
   });
 
   // ------------------------------------------------------------------
+  // Пользовательские промты
+  // ------------------------------------------------------------------
+  api.get('/prompts', (_req, res) => {
+    const rows = db.prepare('SELECT * FROM prompts ORDER BY id DESC').all();
+    res.json(rows);
+  });
+
+  api.post('/prompts', (req, res) => {
+    const { title, content } = (req.body || {}) as { title?: string; content?: string };
+    if (!title?.trim() || !content?.trim()) {
+      res.status(400).json({ error: 'Укажите название и текст промта.' });
+      return;
+    }
+    const info = db
+      .prepare('INSERT INTO prompts (title, content) VALUES (?, ?)')
+      .run(title.trim().slice(0, 120), content.trim());
+    const created = db.prepare('SELECT * FROM prompts WHERE id = ?').get(info.lastInsertRowid);
+    res.status(201).json(created);
+  });
+
+  api.patch('/prompts/:id', (req, res) => {
+    const id = Number(req.params.id);
+    const existing = db.prepare('SELECT * FROM prompts WHERE id = ?').get(id) as
+      | { id: number; title: string; content: string }
+      | undefined;
+    if (!existing) {
+      res.status(404).json({ error: 'Промт не найден.' });
+      return;
+    }
+    const body = (req.body || {}) as { title?: string; content?: string };
+    const nextTitle = body.title !== undefined ? body.title.trim().slice(0, 120) : existing.title;
+    const nextContent = body.content !== undefined ? body.content.trim() : existing.content;
+    if (!nextTitle || !nextContent) {
+      res.status(400).json({ error: 'Название и текст промта не могут быть пустыми.' });
+      return;
+    }
+    db.prepare(`UPDATE prompts SET title = ?, content = ?, updated_at = datetime('now') WHERE id = ?`).run(
+      nextTitle,
+      nextContent,
+      id,
+    );
+    const updated = db.prepare('SELECT * FROM prompts WHERE id = ?').get(id);
+    res.json(updated);
+  });
+
+  api.delete('/prompts/:id', (req, res) => {
+    db.prepare('DELETE FROM prompts WHERE id = ?').run(Number(req.params.id));
+    res.json({ ok: true });
+  });
+
+  // ------------------------------------------------------------------
   // Модули 2, 3, 4: Статьи, 7-этапный пайплайн, Валидатор, Экспорт
   // ------------------------------------------------------------------
   api.get('/articles', (_req, res) => {

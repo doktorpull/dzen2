@@ -8,6 +8,7 @@ import {
   Moon,
   Settings,
   Sun,
+  Terminal,
   X,
 } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
@@ -15,17 +16,19 @@ import { apiFetch, setAuthToken } from './api';
 import { CpaOffersView } from './components/CpaOffersView';
 import { LoginView } from './components/LoginView';
 import { PipelineWorkspaceView } from './components/PipelineWorkspaceView';
+import { PromptsView } from './components/PromptsView';
 import { RagLibraryView } from './components/RagLibraryView';
 import { SettingsView } from './components/SettingsView';
 import { TopicsRadarView } from './components/TopicsRadarView';
-import type { AppSettings, Article, CpaOffer, Niche, ProviderStatus, RagSample, Topic } from './types';
+import type { AppSettings, Article, CpaOffer, Niche, PromptItem, ProviderStatus, RagSample, Topic } from './types';
 
-type ActiveSection = 'topics' | 'pipeline' | 'rag' | 'cpa' | 'settings';
+type ActiveSection = 'topics' | 'pipeline' | 'prompts' | 'rag' | 'cpa' | 'settings';
 type ThemeMode = 'dark' | 'light';
 
 const SECTION_META: Record<ActiveSection, { title: string; subtitle: string }> = {
   topics: { title: 'Радар тем и ниши', subtitle: 'Модуль 1 · Быстрый запуск и скоринг трендов' },
   pipeline: { title: 'Конвейер статей', subtitle: 'Модули 2–4 · 7 этапов, 10-пт валидатор, визуал и выдача' },
+  prompts: { title: 'Промты', subtitle: 'Библиотека пользовательских промтов в формате плиток' },
   rag: { title: 'Библиотека стиля RAG', subtitle: 'Эталонные тексты ниш для стилевой мимикрии' },
   cpa: { title: 'Офферы CPA', subtitle: 'Партнёрские ссылки для нативной монетизации' },
   settings: { title: 'Настройки и Docker', subtitle: 'Провайдеры ИИ, Telegram-мост и деплой на порт 8003' },
@@ -56,6 +59,7 @@ export default function App() {
   const [topics, setTopics] = useState<Topic[]>([]);
   const [ragSamples, setRagSamples] = useState<RagSample[]>([]);
   const [articles, setArticles] = useState<Article[]>([]);
+  const [prompts, setPrompts] = useState<PromptItem[]>([]);
   const [selectedArticleId, setSelectedArticleId] = useState<number | null>(null);
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [providers, setProviders] = useState<ProviderStatus[]>([]);
@@ -73,12 +77,13 @@ export default function App() {
     setLoadingData(true);
     setLoadError('');
     try {
-      const [n, o, t, r, a, s] = await Promise.all([
+      const [n, o, t, r, a, p, s] = await Promise.all([
         apiFetch<Niche[]>('/niches'),
         apiFetch<CpaOffer[]>('/cpa-offers'),
         apiFetch<Topic[]>('/topics'),
         apiFetch<RagSample[]>('/rag-samples'),
         apiFetch<Article[]>('/articles'),
+        apiFetch<PromptItem[]>('/prompts'),
         apiFetch<{ settings: AppSettings; providers: ProviderStatus[] }>('/settings'),
       ]);
       setNiches(n);
@@ -86,6 +91,7 @@ export default function App() {
       setTopics(t);
       setRagSamples(r);
       setArticles(a);
+      setPrompts(p);
       setSettings(s.settings);
       setProviders(s.providers);
     } catch (err) {
@@ -161,6 +167,7 @@ export default function App() {
   const navItems: Array<{ id: ActiveSection; label: string; icon: typeof Compass; count?: number }> = [
     { id: 'topics', label: 'Радар тем', icon: Compass, count: topics.length },
     { id: 'pipeline', label: 'Конвейер статей', icon: FileText, count: articles.length },
+    { id: 'prompts', label: 'Промты', icon: Terminal, count: prompts.length },
     { id: 'rag', label: 'Стиль RAG', icon: BookOpenText, count: ragSamples.length },
     { id: 'cpa', label: 'Офферы CPA', icon: Link2, count: offers.length },
     { id: 'settings', label: 'Настройки и Docker', icon: Settings },
@@ -333,6 +340,8 @@ export default function App() {
                   onGoToTopics={() => setSection('topics')}
                 />
               )}
+
+              {section === 'prompts' && <PromptsView prompts={prompts} onRefresh={loadAllData} />}
 
               {section === 'rag' && (
                 <RagLibraryView niches={niches} samples={ragSamples} onRefresh={loadAllData} />

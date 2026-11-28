@@ -185,3 +185,11 @@ export interface ProviderStatus {
   note: string;
   defaultModel: string;
 }
+
+export interface PromptItem {
+  id: number;
+  title: string;
+  content: string;
+  created_at: string;
+  updated_at: string;
+}
