@@ -5,6 +5,9 @@ import type { PromptItem } from '../types';
 
 interface PromptsViewProps {
   prompts: PromptItem[];
+  createModalOpen: boolean;
+  onOpenCreateModal: () => void;
+  onCloseCreateModal: () => void;
   onRefresh: () => Promise<void>;
 }
 
@@ -24,7 +27,13 @@ async function copyTextSafe(text: string): Promise<void> {
   }
 }
 
-export function PromptsView({ prompts, onRefresh }: PromptsViewProps) {
+export function PromptsView({
+  prompts,
+  createModalOpen,
+  onOpenCreateModal,
+  onCloseCreateModal,
+  onRefresh,
+}: PromptsViewProps) {
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
   const [saving, setSaving] = useState(false);
@@ -36,10 +45,17 @@ export function PromptsView({ prompts, onRefresh }: PromptsViewProps) {
   const [savingTitleId, setSavingTitleId] = useState<number | null>(null);
 
   const [copiedId, setCopiedId] = useState<number | null>(null);
-  const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [confirmDeleteItem, setConfirmDeleteItem] = useState<PromptItem | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
   const [expandedPrompt, setExpandedPrompt] = useState<PromptItem | null>(null);
   const [modalContent, setModalContent] = useState('');
   const [savingModal, setSavingModal] = useState(false);
+
+  function closeCreate() {
+    setError('');
+    onCloseCreateModal();
+  }
 
   async function handleCreate(e: FormEvent) {
     e.preventDefault();
@@ -53,6 +69,7 @@ export function PromptsView({ prompts, onRefresh }: PromptsViewProps) {
       });
       setTitle('');
       setContent('');
+      onCloseCreateModal();
       await onRefresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Не удалось добавить промт.');
@@ -99,19 +116,22 @@ export function PromptsView({ prompts, onRefresh }: PromptsViewProps) {
     }, 2000);
   }
 
-  async function handleDelete(id: number) {
-    setDeletingId(id);
+  async function handleConfirmDelete() {
+    if (!confirmDeleteItem) return;
+    const targetId = confirmDeleteItem.id;
+    setDeleting(true);
     setError('');
     try {
-      await apiFetch(`/prompts/${id}`, { method: 'DELETE' });
-      if (expandedPrompt?.id === id) {
+      await apiFetch(`/prompts/${targetId}`, { method: 'DELETE' });
+      if (expandedPrompt?.id === targetId) {
         setExpandedPrompt(null);
       }
+      setConfirmDeleteItem(null);
       await onRefresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Не удалось удалить промт.');
     } finally {
-      setDeletingId(null);
+      setDeleting(false);
     }
   }
 
@@ -143,73 +163,19 @@ export function PromptsView({ prompts, onRefresh }: PromptsViewProps) {
     : prompts;
 
   return (
-    <div className="space-y-6">
-      {/* Форма добавления нового промта */}
-      <section className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6 space-y-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">Добавить новый промт</h2>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-              Сохраняйте рабочие заготовки и инструкции в единую библиотеку плиток для быстрого копирования.
-            </p>
-          </div>
-          <span className="text-xs font-mono tabular-nums text-slate-500 dark:text-slate-400">
-            Всего промтов: {prompts.length}
-          </span>
+    <div className="space-y-5">
+      {error && !createModalOpen && (
+        <div className="p-3 text-xs text-red-700 dark:text-red-400 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900 rounded-lg">
+          {error}
         </div>
+      )}
 
-        <form onSubmit={handleCreate} className="space-y-3">
-          <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-start">
-            <div className="md:col-span-4 space-y-1">
-              <label className="block text-xs font-medium text-slate-600 dark:text-slate-400">
-                Короткое название
-              </label>
-              <input
-                type="text"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                required
-                maxLength={120}
-                placeholder="Напр.: Рерайт под живой стиль Дзена"
-                className="w-full px-3 py-2 text-sm bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 border border-slate-300 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600"
-              />
-            </div>
-
-            <div className="md:col-span-8 space-y-1">
-              <label className="block text-xs font-medium text-slate-600 dark:text-slate-400">
-                Текст промта
-              </label>
-              <textarea
-                value={content}
-                onChange={(e) => setContent(e.target.value)}
-                required
-                rows={3}
-                placeholder="Вставьте полный текст промта..."
-                className="w-full px-3 py-2 text-sm bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 border border-slate-300 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600"
-              />
-            </div>
-          </div>
-
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            {error ? <span className="text-xs text-red-600 dark:text-red-400">{error}</span> : <span />}
-            <button
-              type="submit"
-              disabled={saving}
-              className="px-4 py-2 text-sm font-medium bg-blue-700 hover:bg-blue-800 dark:bg-blue-600 dark:hover:bg-blue-500 disabled:opacity-50 text-white rounded-lg inline-flex items-center gap-2 whitespace-nowrap"
-            >
-              <Plus className="w-4 h-4" />
-              {saving ? 'Добавление...' : 'Добавить промт'}
-            </button>
-          </div>
-        </form>
-      </section>
-
-      {/* Поиск по промтам */}
+      {/* Заголовок списка и поиск */}
       {prompts.length > 0 && (
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+          <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
             Сохранённые промты ({filteredPrompts.length})
-          </h3>
+          </h2>
           <div className="relative w-full sm:w-72">
             <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
             <input
@@ -225,11 +191,21 @@ export function PromptsView({ prompts, onRefresh }: PromptsViewProps) {
 
       {/* Сетка плиток */}
       {prompts.length === 0 ? (
-        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-12 text-center">
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-12 text-center space-y-3">
           <p className="text-sm font-medium text-slate-900 dark:text-slate-100">Промтов пока нет</p>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-            Добавьте первый промт через форму выше — он появится здесь в виде карточки-плитки.
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            Нажмите «Добавить промт» в шапке или кнопку ниже, чтобы создать первую карточку-плитку.
           </p>
+          <div>
+            <button
+              type="button"
+              onClick={onOpenCreateModal}
+              className="px-4 py-2 text-xs font-medium bg-blue-700 hover:bg-blue-800 dark:bg-blue-600 dark:hover:bg-blue-500 text-white rounded-lg inline-flex items-center gap-1.5 whitespace-nowrap"
+            >
+              <Plus className="w-4 h-4" />
+              Добавить промт
+            </button>
+          </div>
         </div>
       ) : filteredPrompts.length === 0 ? (
         <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-10 text-center text-sm text-slate-500 dark:text-slate-400">
@@ -335,8 +311,7 @@ export function PromptsView({ prompts, onRefresh }: PromptsViewProps) {
 
                   <button
                     type="button"
-                    onClick={() => void handleDelete(item.id)}
-                    disabled={deletingId === item.id}
+                    onClick={() => setConfirmDeleteItem(item)}
                     className="px-2.5 py-1.5 text-xs font-medium text-slate-500 dark:text-slate-400 hover:text-red-700 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-lg inline-flex items-center gap-1 transition-colors whitespace-nowrap"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
@@ -346,6 +321,137 @@ export function PromptsView({ prompts, onRefresh }: PromptsViewProps) {
               </article>
             );
           })}
+        </div>
+      )}
+
+      {/* Модальное окно добавления нового промта */}
+      {createModalOpen && (
+        <div
+          className="fixed inset-0 z-50 bg-slate-950/70 flex items-center justify-center p-4"
+          onClick={closeCreate}
+        >
+          <div
+            className="w-full max-w-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6 space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h3 className="text-base font-semibold text-slate-900 dark:text-slate-100">Добавить новый промт</h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                  Сохраните короткое название и текст инструкции в библиотеку плиток.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={closeCreate}
+                className="p-1.5 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 rounded-lg"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleCreate} className="space-y-4">
+              <div className="space-y-1">
+                <label className="block text-xs font-medium text-slate-600 dark:text-slate-400">
+                  Короткое название
+                </label>
+                <input
+                  type="text"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  required
+                  autoFocus
+                  maxLength={120}
+                  placeholder="Напр.: Рерайт под живой стиль Дзена"
+                  className="w-full px-3 py-2 text-sm bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 border border-slate-300 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="block text-xs font-medium text-slate-600 dark:text-slate-400">
+                  Текст промта
+                </label>
+                <textarea
+                  value={content}
+                  onChange={(e) => setContent(e.target.value)}
+                  required
+                  rows={6}
+                  placeholder="Вставьте полный текст промта..."
+                  className="w-full p-3 text-sm bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 border border-slate-300 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600"
+                />
+              </div>
+
+              {error && <div className="text-xs text-red-600 dark:text-red-400">{error}</div>}
+
+              <div className="flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={closeCreate}
+                  className="px-3.5 py-2 text-xs font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg whitespace-nowrap"
+                >
+                  Отмена
+                </button>
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className="px-4 py-2 text-xs font-medium bg-blue-700 hover:bg-blue-800 dark:bg-blue-600 dark:hover:bg-blue-500 disabled:opacity-50 text-white rounded-lg inline-flex items-center gap-1.5 whitespace-nowrap"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  {saving ? 'Добавление...' : 'Добавить промт'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Модальное окно подтверждения удаления */}
+      {confirmDeleteItem && (
+        <div
+          className="fixed inset-0 z-50 bg-slate-950/70 flex items-center justify-center p-4"
+          onClick={() => !deleting && setConfirmDeleteItem(null)}
+        >
+          <div
+            className="w-full max-w-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6 space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <h3 className="text-base font-semibold text-slate-900 dark:text-slate-100">
+                Вы действительно хотите удалить промт?
+              </h3>
+              <button
+                type="button"
+                disabled={deleting}
+                onClick={() => setConfirmDeleteItem(null)}
+                className="p-1 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 rounded-lg"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              Промт <span className="font-medium text-slate-800 dark:text-slate-200">«{confirmDeleteItem.title}»</span>{' '}
+              будет удалён без возможности восстановления.
+            </p>
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                type="button"
+                disabled={deleting}
+                onClick={() => setConfirmDeleteItem(null)}
+                className="px-3.5 py-2 text-xs font-medium bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-lg whitespace-nowrap"
+              >
+                Отмена
+              </button>
+              <button
+                type="button"
+                disabled={deleting}
+                onClick={() => void handleConfirmDelete()}
+                className="px-4 py-2 text-xs font-medium bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white rounded-lg inline-flex items-center gap-1.5 whitespace-nowrap"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                {deleting ? 'Удаление...' : 'Удалить'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

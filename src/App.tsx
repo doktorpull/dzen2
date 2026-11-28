@@ -6,6 +6,7 @@ import {
   LogOut,
   Menu,
   Moon,
+  Plus,
   Settings,
   Sun,
   Terminal,
@@ -60,6 +61,7 @@ export default function App() {
   const [ragSamples, setRagSamples] = useState<RagSample[]>([]);
   const [articles, setArticles] = useState<Article[]>([]);
   const [prompts, setPrompts] = useState<PromptItem[]>([]);
+  const [promptCreateModalOpen, setPromptCreateModalOpen] = useState(false);
   const [selectedArticleId, setSelectedArticleId] = useState<number | null>(null);
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [providers, setProviders] = useState<ProviderStatus[]>([]);
@@ -288,11 +290,25 @@ export default function App() {
             </div>
           </div>
 
-          <div className="flex items-center gap-3 shrink-0">
+          <div className="flex items-center gap-2.5 shrink-0">
+            {section === 'prompts' && (
+              <button
+                type="button"
+                onClick={() => setPromptCreateModalOpen(true)}
+                className="px-4 py-2 text-xs font-medium bg-blue-700 hover:bg-blue-800 dark:bg-blue-600 dark:hover:bg-blue-500 text-white rounded-lg transition-colors inline-flex items-center gap-1.5 whitespace-nowrap shrink-0"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                Добавить промт
+              </button>
+            )}
             <button
               type="button"
               onClick={() => setSection('topics')}
-              className="px-4 py-2 text-xs font-medium bg-blue-700 hover:bg-blue-800 dark:bg-blue-600 dark:hover:bg-blue-500 text-white rounded-lg transition-colors whitespace-nowrap shrink-0"
+              className={`px-4 py-2 text-xs font-medium rounded-lg transition-colors whitespace-nowrap shrink-0 ${
+                section === 'prompts'
+                  ? 'bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200'
+                  : 'bg-blue-700 hover:bg-blue-800 dark:bg-blue-600 dark:hover:bg-blue-500 text-white'
+              }`}
             >
               Новая статья
             </button>
@@ -341,7 +357,15 @@ export default function App() {
                 />
               )}
 
-              {section === 'prompts' && <PromptsView prompts={prompts} onRefresh={loadAllData} />}
+              {section === 'prompts' && (
+                <PromptsView
+                  prompts={prompts}
+                  createModalOpen={promptCreateModalOpen}
+                  onOpenCreateModal={() => setPromptCreateModalOpen(true)}
+                  onCloseCreateModal={() => setPromptCreateModalOpen(false)}
+                  onRefresh={loadAllData}
+                />
+              )}
 
               {section === 'rag' && (
                 <RagLibraryView niches={niches} samples={ragSamples} onRefresh={loadAllData} />
